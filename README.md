@@ -26,6 +26,24 @@ Run the package entry point over standard input/output:
 uv run attendance-crmt
 ```
 
+## Run with Docker
+
+The container exposes the streamable HTTP MCP endpoint on port 8000 at
+`/mcp`.
+
+```bash
+docker compose up --build
+```
+
+Stop the service with `docker compose down`.
+
+## Continuous integration
+
+GitHub Actions runs linting, formatting checks, tests, and a Docker image build
+for pull requests. Pushes to `main` additionally publish the image to GitHub
+Container Registry as `ghcr.io/<owner>/attendance-crmt:latest` and with a
+commit-SHA tag.
+
 ## Development
 
 ```bash
