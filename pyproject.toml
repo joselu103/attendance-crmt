@@ -1,0 +1,31 @@
+[project]
+name = "attendance-crmt"
+version = "0.1.0"
+description = "A modular FastMCP server scaffold."
+authors = [
+    { name = "Joselu", email = "joseluiscc103@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastmcp>=3.4.5",
+]
+
+[project.scripts]
+attendance-crmt = "attendance_crmt:main"
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
