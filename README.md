@@ -37,6 +37,20 @@ docker compose up --build
 
 Stop the service with `docker compose down`.
 
+## Database configuration
+
+The attendance mappings use SQLAlchemy with the Microsoft SQL Server `pyodbc`
+dialect. Configure a **read-only** connection first while the MCP capabilities
+are being discovered. Keep the URL in an ignored local environment file or
+secret store; never commit it.
+
+```bash
+export ATTENDANCE_DATABASE_URL='mssql+pyodbc://<user>:<password>@<host>/<database>?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes'
+```
+
+`attendance_crmt.database.create_engine_from_environment()` constructs the
+engine lazily, so importing the application does not connect to SQL Server.
+
 ## Continuous integration
 
 GitHub Actions runs linting, formatting checks, tests, and a Docker image build

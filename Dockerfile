@@ -3,6 +3,19 @@ FROM python:3.14-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.16 /uv /uvx /bin/
 
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates curl unixodbc \
+    && . /etc/os-release \
+    && curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+        --retry-delay 2 \
+        --output /tmp/packages-microsoft-prod.deb \
+        "https://packages.microsoft.com/config/debian/${VERSION_ID}/packages-microsoft-prod.deb" \
+    && dpkg --install /tmp/packages-microsoft-prod.deb \
+    && rm /tmp/packages-microsoft-prod.deb \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install --no-install-recommends --yes msodbcsql18 \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
