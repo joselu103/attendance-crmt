@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from fastmcp import FastMCP
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -15,9 +14,10 @@ from attendance_crmt.database import (
 from attendance_crmt.models import Employee
 
 
-@dataclass(frozen=True)
-class EmployeeSummary:
+class EmployeeSummary(BaseModel):
     """A directory-safe employee representation for catalog lookups."""
+
+    model_config = ConfigDict(frozen=True)
 
     employee_id: int
     first_name: str
@@ -27,9 +27,10 @@ class EmployeeSummary:
     active: int | None
 
 
-@dataclass(frozen=True)
-class EmployeePage:
+class EmployeePage(BaseModel):
     """A bounded page of employee directory results."""
+
+    model_config = ConfigDict(frozen=True)
 
     items: list[EmployeeSummary]
     limit: int

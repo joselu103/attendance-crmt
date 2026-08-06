@@ -41,6 +41,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
+    { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyodbc" },
     { name = "sqlalchemy" },
@@ -55,6 +56,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.4.5" },
+    { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pyodbc", specifier = ">=5.2" },
     { name = "sqlalchemy", specifier = ">=2.0" },
