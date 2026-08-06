@@ -28,3 +28,52 @@ The MCP server will eventually need to cover:
 ## Key Technical Concerns to Keep in Mind
 - **Data Integrity:** Bypassing the .NET app logic means we must strictly replicate audit trails, foreign keys, and DB constraints.
 - **Security & RBAC:** Ensure role-based access rules are enforced by the MCP server before executing queries.
+
+---
+
+## Tool Architecture Goal
+
+Expose a small, domain-oriented MCP API rather than raw database-table CRUD.
+Tools should operate on employees, attendance events, current status, planned work, and
+attendance reporting; clients must not need to know legacy table names or foreign keys.
+
+### Tool Groups
+
+1. **Catalog and employee discovery (read-only)**
+   - List and retrieve employees.
+   - List active punch types and reference locations.
+2. **Attendance queries (read-only)**
+   - List and retrieve attendance events in a bounded date range.
+   - Retrieve a daily employee view and the live attendance-status grouping.
+3. **Attendance mutations**
+   - Record an attendance event.
+   - Correct an existing event with a mandatory correction reason.
+   - Delete or reverse an event only after the legacy application's supported behavior is confirmed.
+4. **Bulk operations**
+   - Preview a proposed workday registration before changing data.
+   - Apply only the exact reviewed request through a short-lived confirmation token.
+5. **Reporting**
+   - Retrieve planned work, planned-versus-actual summaries, and attendance exceptions.
+
+### Non-Negotiable Contracts
+
+- Never expose generic raw-SQL or table-level CRUD tools.
+- Attendance-event creation and correction accept a punch type, not a location. The
+  server derives and persists the location from the approved punch-type-to-location
+  mapping so these fields cannot diverge.
+- Keep caller identity, audit fields, timestamps, and edit markers server-owned.
+- Enforce RBAC in the service layer: employees may act on their own data; elevated
+  roles are required for team views, corrections, and bulk operations.
+- Bound all list and report queries with date ranges and pagination.
+- Use structured JSON outputs, explicit timezone semantics, transactions for writes,
+  idempotent duplicate handling for bulk requests, and mutation audit records.
+- During discovery, run with a read-only database connection. Enable write tools only
+  after their database behavior, legacy rules, authorization, and tests are confirmed.
+
+### Delivery Sequence
+
+1. Employee/punch-type discovery, event history, and live-status reads.
+2. Single-event registration with server-side location derivation.
+3. Event correction and audit semantics.
+4. Planned-versus-actual reporting and exception detection.
+5. Preview/apply bulk workday registration.
