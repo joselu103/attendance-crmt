@@ -9,13 +9,4 @@ def test_create_server_registers_echo_tool() -> None:
     tools = asyncio.run(server.list_tools())
 
     assert server.name == "attendance-crmt"
-    assert [tool.name for tool in tools] == ["echo", "list_employees"]
-
-
-def test_echo_tool_returns_the_supplied_message() -> None:
-    server = create_server()
-
-    result = asyncio.run(server.call_tool("echo", {"message": "Hello, MCP!"}))
-
-    assert result.is_error is False
-    assert result.content[0].text == "Hello, MCP!"
+    assert [tool.name for tool in tools] == ["list_employees"]
