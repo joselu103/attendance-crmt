@@ -1,11 +1,10 @@
 """SQL Server engine and session-factory construction."""
 
-import os
-
+from pydantic import ValidationError
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-DATABASE_URL_ENV = "ATTENDANCE_DATABASE_URL"
+from attendance_crmt.settings import DATABASE_URL_ENV, Settings
 
 
 def create_engine_for_url(database_url: str) -> Engine:
@@ -18,11 +17,12 @@ def create_engine_for_url(database_url: str) -> Engine:
 
 
 def create_engine_from_environment() -> Engine:
-    """Build an engine from the required non-secret environment variable."""
-    database_url = os.environ.get(DATABASE_URL_ENV)
-    if not database_url:
+    """Build an engine from the configured database URL without connecting."""
+    try:
+        database_url = Settings().database_url
+    except ValidationError as error:
         message = f"{DATABASE_URL_ENV} must be configured."
-        raise RuntimeError(message)
+        raise RuntimeError(message) from error
 
     return create_engine_for_url(database_url)
 

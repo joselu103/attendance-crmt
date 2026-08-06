@@ -41,15 +41,19 @@ Stop the service with `docker compose down`.
 
 The attendance mappings use SQLAlchemy with the Microsoft SQL Server `pyodbc`
 dialect. Configure a **read-only** connection first while the MCP capabilities
-are being discovered. Keep the URL in an ignored local environment file or
-secret store; never commit it.
+are being discovered. Copy the tracked template to an ignored `.env` file and
+set the URL; never commit the resulting file.
 
 ```bash
-export ATTENDANCE_DATABASE_URL='mssql+pyodbc://<user>:<password>@<host>/<database>?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes'
+cp .env.example .env
 ```
 
-`attendance_crmt.database.create_engine_from_environment()` constructs the
-engine lazily, so importing the application does not connect to SQL Server.
+`pydantic-settings` reads `.env` during local development. Environment
+variables override it, so production deployments should inject
+`ATTENDANCE_DATABASE_URL` from their platform secret manager rather than
+shipping a `.env` file. `attendance_crmt.database.create_engine_from_environment()`
+constructs the engine lazily, so importing the application does not connect to
+SQL Server.
 
 ## Continuous integration
 
