@@ -55,6 +55,10 @@ shipping a `.env` file. `attendance_crmt.database.create_engine_from_environment
 constructs the engine lazily, so importing the application does not connect to
 SQL Server.
 
+Docker Compose passes the ignored local `.env` file into the container at
+runtime; it is not copied into the image. Create `.env` before running
+`docker compose up --build`.
+
 ## Continuous integration
 
 GitHub Actions runs linting, formatting checks, tests, and a Docker image build

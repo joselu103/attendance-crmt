@@ -3,7 +3,7 @@ name = "attendance-crmt"
 version = "0.1.0"
 description = "A modular FastMCP server scaffold."
 authors = [
-    { name = "Joselu", email = "joseluiscc103@gmail.com" }
+    { name = "Jose Luis Cambil", email = "joseluiscc103@gmail.com" }
 ]
 requires-python = ">=3.14"
 dependencies = [
