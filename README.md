@@ -72,6 +72,10 @@ commit-SHA tag.
 # Run tests
 uv run pytest
 
+# Run an individual test category
+uv run pytest tests/unit
+uv run pytest tests/integration
+
 # Check formatting and linting
 uv run ruff check .
 uv run ruff format --check .
@@ -85,7 +89,10 @@ uv run ruff format --check .
 │   └── attendance_crmt/
 │       ├── server.py       # Server composition and `mcp` entry point
 │       └── tools/          # Isolated tool registrations
-├── tests/                  # Server behavior tests
+├── tests/
+│   ├── unit/               # Isolated model and settings tests
+│   ├── integration/        # FastMCP and database-backed behavior tests
+│   └── conftest.py         # Shared test fixtures
 ├── pyproject.toml          # Project metadata and dependencies
 └── uv.lock                 # Locked dependency graph
 ```
