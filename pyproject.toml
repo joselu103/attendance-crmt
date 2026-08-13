@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "pyodbc>=5.2",
     "sqlalchemy>=2.0",
+    "structlog>=26.1.0",
 ]
 
 [project.scripts]
