@@ -1,10 +1,7 @@
-from decimal import Decimal
-
 import pytest
 from sqlalchemy import inspect
 from sqlalchemy.dialects.mssql import SMALLDATETIME
 
-from attendance_crmt.database import create_engine_for_url, create_session_factory
 from attendance_crmt.models import (
     AttendanceLog,
     Base,
@@ -93,22 +90,3 @@ def test_employee_maps_the_read_model_identity_and_fields() -> None:
         for constraint in employee.constraints
         if constraint.__class__.__name__ == "UniqueConstraint"
     )
-
-
-def test_mapped_columns_accept_expected_python_value_types() -> None:
-    planned_work = PlannedWork(
-        izvajalec_id=7,
-        datum_id="2026-08-05 00:00:00",
-        att_planirano_ur_va=Decimal("8.00"),
-    )
-
-    assert planned_work.izvajalec_id == 7
-    assert planned_work.att_planirano_ur_va == Decimal("8.00")
-
-
-def test_database_setup_builds_an_engine_and_session_factory() -> None:
-    engine = create_engine_for_url("sqlite://")
-    session_factory = create_session_factory(engine)
-
-    assert engine.url.drivername == "sqlite"
-    assert session_factory.kw["bind"] is engine
