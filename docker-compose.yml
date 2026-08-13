@@ -7,8 +7,5 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - attendance-audit:/app/data
+      - ./data:/app/data
     restart: unless-stopped
-
-volumes:
-  attendance-audit:
