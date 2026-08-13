@@ -7,10 +7,6 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from attendance_crmt.database import (
-    create_engine_from_environment,
-    create_session_factory,
-)
 from attendance_crmt.models import Employee
 
 
@@ -39,21 +35,9 @@ class EmployeePage(BaseModel):
 
 
 def register_catalog_tools(
-    server: FastMCP, session_factory: sessionmaker[Session] | None = None
+    server: FastMCP, session_factory: sessionmaker[Session]
 ) -> None:
-    """Register read-only catalog tools.
-
-    A supplied session factory keeps database access testable. Production session
-    creation remains lazy so importing and composing the MCP server needs no
-    database configuration.
-    """
-
-    def get_session_factory() -> sessionmaker[Session]:
-        nonlocal session_factory
-
-        if session_factory is None:
-            session_factory = create_session_factory(create_engine_from_environment())
-        return session_factory
+    """Register read-only catalog tools with their application session factory."""
 
     @server.tool(
         description=(
@@ -75,7 +59,7 @@ def register_catalog_tools(
         if offset < 0:
             raise ValueError("offset must not be negative.")
 
-        with get_session_factory()() as session:
+        with session_factory() as session:
             employees = session.scalars(
                 select(Employee)
                 .where(Employee.active == 1)
