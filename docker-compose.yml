@@ -6,4 +6,9 @@ services:
       - .env
     ports:
       - "8000:8000"
+    volumes:
+      - attendance-audit:/app/data
     restart: unless-stopped
+
+volumes:
+  attendance-audit:

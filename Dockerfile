@@ -30,7 +30,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
-RUN useradd --create-home --uid 10001 appuser
+RUN useradd --create-home --uid 10001 appuser \
+    && install --directory --owner=appuser --group=appuser /app/data
 USER appuser
 
 EXPOSE 8000

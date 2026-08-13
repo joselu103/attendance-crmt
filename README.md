@@ -16,7 +16,7 @@ uv run fastmcp dev src/attendance_crmt/server.py
 ```
 
 The development inspector opens a local interface for exercising the server's
-tools. The example `echo` tool returns a supplied message unchanged.
+tools.
 
 ## Run as an MCP server
 
@@ -59,6 +59,31 @@ Docker Compose passes the ignored local `.env` file into the container at
 runtime; it is not copied into the image. Create `.env` before running
 `docker compose up --build`.
 
+## Audit and structured logging
+
+Every successful or failed MCP tool interaction that reaches a registered tool
+is recorded in a local SQLite audit database. Audit persistence uses a separate
+SQLAlchemy metadata base, engine, and session factory, so it cannot interfere
+with the legacy SQL Server attendance mappings. Until the Teams bot introduces
+an authenticated caller identity, records use `actor_id = "mcp"` deliberately;
+they do not claim to identify an end user.
+
+`ATTENDANCE_AUDIT_DATABASE_PATH` selects the database path and defaults to
+`data/audit.sqlite3`. The local `data/` directory is ignored by Git. Docker
+Compose mounts `/app/data` as the persistent `attendance-audit` volume, so the
+audit history survives a container replacement. Back up that volume before
+performing destructive Docker cleanup.
+
+The server emits newline-delimited JSON through `structlog` to standard error.
+Each interaction log includes `timestamp`, `level`, `event`, `tool_name`,
+`outcome`, and `duration_ms`, ready for a future log collector or analysis
+tool. Request values are stored in SQLite with common sensitive fields
+(`authorization`, `cookie`, `password`, `secret`, and `token`) redacted.
+
+Production composition creates database infrastructure from environment
+settings once during server startup. Tests inject `ServerDependencies` with
+isolated session factories instead of relying on a shared `.env.test` file.
+
 ## Continuous integration
 
 GitHub Actions runs linting, formatting checks, tests, and a Docker image build
@@ -87,6 +112,9 @@ uv run ruff format --check .
 .
 ├── src/
 │   └── attendance_crmt/
+│       ├── audit.py        # Audit ORM model and persistence
+│       ├── audit_middleware.py # Cross-cutting MCP tool auditing
+│       ├── dependencies.py # Production and test infrastructure composition
 │       ├── server.py       # Server composition and `mcp` entry point
 │       └── tools/          # Isolated tool registrations
 ├── tests/
