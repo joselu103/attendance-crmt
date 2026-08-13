@@ -1,18 +1,31 @@
 """FastMCP server composition."""
 
 from fastmcp import FastMCP
-from sqlalchemy.orm import Session, sessionmaker
 
+from attendance_crmt.audit_middleware import AuditMiddleware
+from attendance_crmt.dependencies import (
+    ServerDependencies,
+    create_production_dependencies,
+)
+from attendance_crmt.observability import configure_structlog
+from attendance_crmt.settings import get_settings
 from attendance_crmt.tools import register_catalog_tools
 
-SERVER_NAME = "attendance-crmt"
-SERVER_INSTRUCTIONS = "A modular FastMCP server scaffold."
 
-
-def create_server(session_factory: sessionmaker[Session] | None = None) -> FastMCP:
+def create_server(dependencies: ServerDependencies | None = None) -> FastMCP:
     """Create the application server and register its tools."""
-    server = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS)
-    register_catalog_tools(server, session_factory=session_factory)
+    settings = get_settings()
+    dependencies = dependencies or create_production_dependencies(settings)
+    configure_structlog()
+
+    server = FastMCP(
+        name=settings.server_name,
+        instructions=settings.server_instructions,
+    )
+    server.add_middleware(AuditMiddleware(dependencies.audit_log))
+    register_catalog_tools(
+        server, session_factory=dependencies.attendance_session_factory
+    )
     return server
 
 

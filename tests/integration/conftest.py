@@ -9,7 +9,13 @@ from sqlalchemy import Engine, Table, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from attendance_crmt.audit import (
+    AuditLog,
+    create_audit_engine,
+    create_audit_session_factory,
+)
 from attendance_crmt.database import create_session_factory
+from attendance_crmt.dependencies import ServerDependencies
 from attendance_crmt.models import Employee
 
 
@@ -53,6 +59,32 @@ def employee_session_factory(sqlite_engine: Engine) -> sessionmaker[Session]:
     """Provide sessions backed by an empty ``dbo.izvajalci`` test table."""
     cast(Table, Employee.__table__).create(sqlite_engine)
     return create_session_factory(sqlite_engine)
+
+
+@pytest.fixture
+def audit_session_factory(tmp_path) -> Iterator[sessionmaker[Session]]:
+    """Provide an isolated file-backed SQLite audit database for one test."""
+    engine = create_audit_engine(tmp_path / "audit.sqlite3")
+    yield create_audit_session_factory(engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def audit_log(audit_session_factory: sessionmaker[Session]) -> AuditLog:
+    """Provide audit persistence backed by the test's isolated SQLite database."""
+    return AuditLog(audit_session_factory)
+
+
+@pytest.fixture
+def server_dependencies(
+    employee_session_factory: sessionmaker[Session],
+    audit_log: AuditLog,
+) -> ServerDependencies:
+    """Provide all infrastructure required by an isolated MCP server."""
+    return ServerDependencies(
+        attendance_session_factory=employee_session_factory,
+        audit_log=audit_log,
+    )
 
 
 @pytest.fixture
