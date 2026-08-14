@@ -134,7 +134,16 @@ identity and delegates to a transport-independent contract and application
 service, which future REST endpoints can reuse.
 
 - `list_employees` — paginated active-employee discovery.
+- `get_employee` — one employee's directory-safe metadata.
+- `list_punch_types` — configured punch types with server-derived locations.
+- `list_locations` — attendance-event location reference data.
 - `list_attendance_events` — administrator-only raw attendance-event drill-down.
+- `get_attendance_event` — administrator-only event detail including recorded audit
+  metadata.
+- `get_daily_attendance` — administrator-only local-calendar event and
+  planned-versus-logged daily view.
+- `get_planned_work` — administrator-only recorded daily planned-work rows; absent
+  rows remain unknown rather than zero.
 - `get_current_attendance` — paginated live status for active employees; omitted
   or `null` `as_of` uses the current Europe/Ljubljana local time.
 - `get_employee_attendance_analysis` — administrator-only 31-day employee
@@ -144,6 +153,8 @@ service, which future REST endpoints can reuse.
   planned-work, punch-type, and anomaly summary without daily detail.
 - `get_organization_attendance_analysis` — administrator-only 31-day active
   workforce totals plus paginated employee summaries without daily detail.
+- `get_exceptions` — administrator-only paginated operational report for missing
+  attendance, incomplete intervals, and interval anomalies.
 
 ## Adding a feature tool
 
