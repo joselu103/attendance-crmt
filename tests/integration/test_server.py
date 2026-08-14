@@ -9,4 +9,7 @@ def test_create_server_registers_catalog_tools(server_dependencies) -> None:
     tools = asyncio.run(server.list_tools())
 
     assert server.name == "attendance-crmt"
-    assert [tool.name for tool in tools] == ["list_employees"]
+    assert [tool.name for tool in tools] == [
+        "list_employees",
+        "list_attendance_events",
+    ]

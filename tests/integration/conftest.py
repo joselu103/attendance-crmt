@@ -6,6 +6,8 @@ from typing import cast
 import factory
 import pytest
 from sqlalchemy import Engine, Table, create_engine, event
+from sqlalchemy.dialects.mssql import SMALLDATETIME
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -16,7 +18,13 @@ from attendance_crmt.audit import (
 )
 from attendance_crmt.database import create_session_factory
 from attendance_crmt.dependencies import ServerDependencies
-from attendance_crmt.models import Employee
+from attendance_crmt.models import AttendanceLog, Employee, Location, PunchType
+
+
+@compiles(SMALLDATETIME, "sqlite")
+def compile_smalldatetime_for_sqlite(_type, _compiler, **_kwargs) -> str:
+    """Render the SQL Server type as SQLite's compatible datetime affinity in tests."""
+    return "DATETIME"
 
 
 class EmployeeFactory(factory.Factory):
@@ -45,10 +53,11 @@ def sqlite_engine() -> Iterator[Engine]:
     @event.listens_for(engine, "connect")
     def attach_dbo(connection, _connection_record) -> None:
         connection.execute("ATTACH DATABASE ':memory:' AS dbo")
-        connection.create_collation(
-            "SQL_Latin1_General_CP1250_CI_AS",
-            lambda left, right: (left > right) - (left < right),
-        )
+        for collation in ("SQL_Latin1_General_CP1250_CI_AS", "Slovenian_CI_AI"):
+            connection.create_collation(
+                collation,
+                lambda left, right: (left > right) - (left < right),
+            )
 
     yield engine
     engine.dispose()
@@ -56,8 +65,14 @@ def sqlite_engine() -> Iterator[Engine]:
 
 @pytest.fixture
 def employee_session_factory(sqlite_engine: Engine) -> sessionmaker[Session]:
-    """Provide sessions backed by an empty ``dbo.izvajalci`` test table."""
-    cast(Table, Employee.__table__).create(sqlite_engine)
+    """Provide sessions backed by empty attendance tables under ``dbo``."""
+    for table in (
+        Employee.__table__,
+        Location.__table__,
+        PunchType.__table__,
+        AttendanceLog.__table__,
+    ):
+        cast(Table, table).create(sqlite_engine)
     return create_session_factory(sqlite_engine)
 
 

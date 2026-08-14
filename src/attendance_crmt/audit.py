@@ -58,6 +58,7 @@ class AuditLog:
     def record(
         self,
         *,
+        actor_id: str,
         tool_name: str,
         request: Mapping[str, Any],
         outcome: str,
@@ -66,7 +67,7 @@ class AuditLog:
         """Add one immutable audit event."""
         event = AuditEvent(
             occurred_at_utc=datetime.now(UTC),
-            actor_id="mcp",
+            actor_id=actor_id,
             tool_name=tool_name,
             request_json=json.dumps(_sanitize(request), sort_keys=True, default=str),
             outcome=outcome,

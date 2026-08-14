@@ -2,14 +2,15 @@
 
 from fastmcp import FastMCP
 
+from attendance_crmt.attendance.tools import register_attendance_tools
 from attendance_crmt.audit_middleware import AuditMiddleware
+from attendance_crmt.catalog.tools import register_catalog_tools
 from attendance_crmt.dependencies import (
     ServerDependencies,
     create_production_dependencies,
 )
 from attendance_crmt.observability import configure_structlog
 from attendance_crmt.settings import get_settings
-from attendance_crmt.tools import register_catalog_tools
 
 
 def create_server(dependencies: ServerDependencies | None = None) -> FastMCP:
@@ -22,9 +23,16 @@ def create_server(dependencies: ServerDependencies | None = None) -> FastMCP:
         name=settings.server_name,
         instructions=settings.server_instructions,
     )
-    server.add_middleware(AuditMiddleware(dependencies.audit_log))
+    server.add_middleware(
+        AuditMiddleware(dependencies.audit_log, dependencies.requester_resolver)
+    )
     register_catalog_tools(
         server, session_factory=dependencies.attendance_session_factory
+    )
+    register_attendance_tools(
+        server,
+        session_factory=dependencies.attendance_session_factory,
+        requester_resolver=dependencies.requester_resolver,
     )
     return server
 

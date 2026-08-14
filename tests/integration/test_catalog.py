@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import date, datetime
 
 import pytest
 from fastmcp.exceptions import ToolError
@@ -7,6 +8,11 @@ from sqlalchemy import select
 
 from attendance_crmt.audit import AuditEvent
 from attendance_crmt.dependencies import ServerDependencies
+from attendance_crmt.identity import (
+    Requester,
+    StaticRequesterResolver,
+)
+from attendance_crmt.models import AttendanceLog, Location, PunchType
 from attendance_crmt.server import create_server
 
 
@@ -98,3 +104,114 @@ def test_audit_middleware_records_a_failed_mcp_tool_interaction(
     assert event.tool_name == "list_employees"
     assert event.request_json == '{"limit": 0, "offset": 0}'
     assert event.outcome == "failure"
+
+
+def test_admin_can_list_an_employees_attendance_events(
+    employee_session_factory,
+    audit_log,
+    audit_session_factory,
+    employee_factory,
+) -> None:
+    employee = employee_factory.build(izvajalec_id=42)
+    other_employee = employee_factory.build(izvajalec_id=43)
+    location = Location(lokacija_id=3, lokacija_opis="Home")
+    punch_type = PunchType(punch_type_id=2, punch_type_desc="Remote work", active=1)
+    requested_event = AttendanceLog(
+        att_id=100,
+        att_user_id=employee.izvajalec_id,
+        att_location_id=location.lokacija_id,
+        att_punch_type_id=punch_type.punch_type_id,
+        att_in=datetime(2026, 8, 10, 8, 0),  # noqa: DTZ001
+        att_out=datetime(2026, 8, 10, 16, 0),  # noqa: DTZ001
+        att_opomba="Client handover",
+    )
+    other_event = AttendanceLog(
+        att_id=101,
+        att_user_id=other_employee.izvajalec_id,
+        att_in=datetime(2026, 8, 10, 8, 0),  # noqa: DTZ001
+    )
+    with employee_session_factory() as session:
+        session.add_all(
+            [
+                employee,
+                other_employee,
+                location,
+                punch_type,
+                requested_event,
+                other_event,
+            ]
+        )
+        session.commit()
+
+    server = create_server(
+        ServerDependencies(
+            attendance_session_factory=employee_session_factory,
+            audit_log=audit_log,
+            requester_resolver=StaticRequesterResolver(
+                Requester(actor_id="mvp-admin", roles=frozenset({"admin"}))
+            ),
+        )
+    )
+
+    result = asyncio.run(
+        server.call_tool(
+            "list_attendance_events",
+            {
+                "employee_id": employee.izvajalec_id,
+                "start_date": date(2026, 8, 10).isoformat(),
+                "end_date": date(2026, 8, 10).isoformat(),
+            },
+        )
+    )
+
+    assert result.is_error is False
+    assert json.loads(result.content[0].text) == {
+        "items": [
+            {
+                "attendance_event_id": 100,
+                "employee_id": 42,
+                "punch_type": "Remote work",
+                "location": "Home",
+                "checked_in_at": "2026-08-10T08:00:00",
+                "checked_out_at": "2026-08-10T16:00:00",
+                "note": "Client handover",
+            }
+        ],
+        "limit": 50,
+        "offset": 0,
+        "next_offset": None,
+    }
+    with audit_session_factory() as session:
+        event = session.scalar(select(AuditEvent))
+
+    assert event is not None
+    assert event.actor_id == "mvp-admin"
+
+
+def test_non_admin_cannot_list_an_employees_attendance_events(
+    employee_session_factory,
+    audit_log,
+) -> None:
+    server = create_server(
+        ServerDependencies(
+            attendance_session_factory=employee_session_factory,
+            audit_log=audit_log,
+            requester_resolver=StaticRequesterResolver(
+                Requester(actor_id="mvp-employee", roles=frozenset())
+            ),
+        )
+    )
+
+    with pytest.raises(
+        ToolError, match="Only administrators may view another employee's events"
+    ):
+        asyncio.run(
+            server.call_tool(
+                "list_attendance_events",
+                {
+                    "employee_id": 42,
+                    "start_date": "2026-08-10",
+                    "end_date": "2026-08-10",
+                },
+            )
+        )

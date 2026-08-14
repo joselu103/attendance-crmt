@@ -11,6 +11,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
 
 from attendance_crmt.audit import AuditLog
+from attendance_crmt.identity import RequesterResolver
 from attendance_crmt.observability import get_logger
 
 logger = get_logger(__name__)
@@ -19,13 +20,17 @@ logger = get_logger(__name__)
 class AuditMiddleware(Middleware):
     """Persist and log the outcome of every MCP tool invocation."""
 
-    def __init__(self, audit_log: AuditLog) -> None:
+    def __init__(
+        self, audit_log: AuditLog, requester_resolver: RequesterResolver
+    ) -> None:
         self._audit_log = audit_log
+        self._requester_resolver = requester_resolver
 
     async def on_call_tool(self, context: Any, call_next: Any) -> Any:
         started_at = perf_counter()
         tool_name = context.message.name
         request = context.message.arguments or {}
+        requester = self._requester_resolver.resolve(context)
 
         try:
             result = await call_next(context)
@@ -37,6 +42,7 @@ class AuditMiddleware(Middleware):
             )
             await self._record_or_raise(
                 tool_name=tool_name,
+                actor_id=requester.actor_id,
                 request=request,
                 outcome="failure",
                 started_at=started_at,
@@ -46,6 +52,7 @@ class AuditMiddleware(Middleware):
         outcome = "failure" if getattr(result, "is_error", False) else "success"
         duration_ms = await self._record_or_raise(
             tool_name=tool_name,
+            actor_id=requester.actor_id,
             request=request,
             outcome=outcome,
             started_at=started_at,
@@ -62,12 +69,13 @@ class AuditMiddleware(Middleware):
         self,
         *,
         tool_name: str,
+        actor_id: str,
         request: Mapping[str, Any],
         outcome: str,
         started_at: float,
     ) -> int:
         try:
-            return await self._record(tool_name, request, outcome, started_at)
+            return await self._record(tool_name, actor_id, request, outcome, started_at)
         except Exception:
             logger.exception(
                 "mcp_audit_persistence_failed",
@@ -81,6 +89,7 @@ class AuditMiddleware(Middleware):
     async def _record(
         self,
         tool_name: str,
+        actor_id: str,
         request: Mapping[str, Any],
         outcome: str,
         started_at: float,
@@ -88,6 +97,7 @@ class AuditMiddleware(Middleware):
         duration_ms = round((perf_counter() - started_at) * 1000)
         await asyncio.to_thread(
             self._audit_log.record,
+            actor_id=actor_id,
             tool_name=tool_name,
             request=request,
             outcome=outcome,

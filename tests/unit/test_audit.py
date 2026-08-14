@@ -17,6 +17,7 @@ def test_audit_log_redacts_sensitive_request_values(tmp_path) -> None:
 
     try:
         audit_log.record(
+            actor_id="test-user",
             tool_name="future_tool",
             request={
                 "nested": {"authorization": "Bearer secret"},

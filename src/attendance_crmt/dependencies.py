@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -15,6 +15,10 @@ from attendance_crmt.database import (
     create_engine_for_url,
     create_session_factory,
 )
+from attendance_crmt.identity import (
+    RequesterResolver,
+    create_mvp_requester_resolver,
+)
 from attendance_crmt.settings import Settings
 
 
@@ -24,6 +28,9 @@ class ServerDependencies:
 
     attendance_session_factory: sessionmaker[Session]
     audit_log: AuditLog
+    requester_resolver: RequesterResolver = field(
+        default_factory=create_mvp_requester_resolver
+    )
 
 
 def create_production_dependencies(settings: Settings) -> ServerDependencies:
