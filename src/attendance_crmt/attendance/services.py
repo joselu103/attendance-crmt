@@ -19,6 +19,7 @@ from attendance_crmt.attendance.contracts import (
     EmployeeAttendanceAnalysis,
     EmployeeAttendanceAnalysisQuery,
     EmployeeAttendanceAnalysisSummary,
+    EmployeeAttendanceSummary,
     LiveAttendanceStatus,
     OrganizationAttendanceAnalysis,
     OrganizationAttendanceAnalysisQuery,
@@ -408,6 +409,34 @@ def _employee_analysis_summary(
         known_planned_hours=analysis.known_planned_hours,
         balance_hours=analysis.balance_hours,
         planned_hours_complete=analysis.planned_hours_complete,
+        incomplete_interval_count=sum(
+            day.incomplete_interval_count for day in analysis.days
+        ),
+        anomaly_count=sum(day.anomaly_count for day in analysis.days),
+    )
+
+
+def get_employee_attendance_summary(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: EmployeeAttendanceAnalysisQuery,
+) -> EmployeeAttendanceSummary:
+    """Return a compact employee summary using the shared analysis semantics."""
+    analysis = get_employee_attendance_analysis(
+        requester=requester,
+        session_factory=session_factory,
+        query=query,
+    )
+    return EmployeeAttendanceSummary(
+        employee_id=analysis.employee_id,
+        start_date=analysis.start_date,
+        end_date=analysis.end_date,
+        logged_hours=analysis.logged_hours,
+        known_planned_hours=analysis.known_planned_hours,
+        balance_hours=analysis.balance_hours,
+        planned_hours_complete=analysis.planned_hours_complete,
+        punch_type_totals=analysis.punch_type_totals,
         incomplete_interval_count=sum(
             day.incomplete_interval_count for day in analysis.days
         ),

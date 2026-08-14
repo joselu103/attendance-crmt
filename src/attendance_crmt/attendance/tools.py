@@ -15,12 +15,16 @@ from attendance_crmt.attendance.contracts import (
     CurrentAttendanceQuery,
     EmployeeAttendanceAnalysis,
     EmployeeAttendanceAnalysisQuery,
+    EmployeeAttendanceSummary,
     LiveAttendanceStatus,
     OrganizationAttendanceAnalysis,
     OrganizationAttendanceAnalysisQuery,
 )
 from attendance_crmt.attendance.services import (
     get_employee_attendance_analysis as query_employee_attendance_analysis,
+)
+from attendance_crmt.attendance.services import (
+    get_employee_attendance_summary as query_employee_attendance_summary,
 )
 from attendance_crmt.attendance.services import (
     get_organization_attendance_analysis as query_organization_attendance_analysis,
@@ -106,6 +110,29 @@ def register_attendance_tools(
     ) -> EmployeeAttendanceAnalysis:
         """Return grouped hours, planned-work comparison, and daily attendance."""
         return query_employee_attendance_analysis(
+            requester=requester_resolver.resolve(ctx),
+            session_factory=session_factory,
+            query=EmployeeAttendanceAnalysisQuery(
+                employee_id=employee_id,
+                start_date=start_date,
+                end_date=end_date,
+            ),
+        )
+
+    @server.tool(
+        description=(
+            "Summarize one employee's attendance over an inclusive "
+            "Europe/Ljubljana date range of up to 31 calendar days."
+        )
+    )
+    def get_employee_attendance_summary(
+        employee_id: int,
+        start_date: date,
+        end_date: date,
+        ctx: Context | None = None,
+    ) -> EmployeeAttendanceSummary:
+        """Return compact hours and anomaly totals without daily detail."""
+        return query_employee_attendance_summary(
             requester=requester_resolver.resolve(ctx),
             session_factory=session_factory,
             query=EmployeeAttendanceAnalysisQuery(

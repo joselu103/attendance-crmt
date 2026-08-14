@@ -140,6 +140,8 @@ service, which future REST endpoints can reuse.
 - `get_employee_attendance_analysis` — administrator-only 31-day employee
   analysis with grouped logged hours, planned-work comparison, daily detail,
   incomplete intervals, and overlap anomalies.
+- `get_employee_attendance_summary` — administrator-only compact 31-day hours,
+  planned-work, punch-type, and anomaly summary without daily detail.
 - `get_organization_attendance_analysis` — administrator-only 31-day active
   workforce totals plus paginated employee summaries without daily detail.
 

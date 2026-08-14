@@ -191,6 +191,23 @@ class EmployeeAttendanceAnalysis(BaseModel):
     days: list[AttendanceAnalysisDay]
 
 
+class EmployeeAttendanceSummary(BaseModel):
+    """Compact employee attendance result without a daily breakdown."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    start_date: date
+    end_date: date
+    logged_hours: Decimal
+    known_planned_hours: Decimal
+    balance_hours: Decimal | None
+    planned_hours_complete: bool
+    punch_type_totals: list[PunchTypeHours]
+    incomplete_interval_count: int
+    anomaly_count: int
+
+
 class OrganizationAttendanceAnalysisQuery(BaseModel):
     """Validated organization reporting range and employee-summary pagination."""
 
