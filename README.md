@@ -112,11 +112,13 @@ uv run ruff format --check .
 .
 ├── src/
 │   └── attendance_crmt/
+│       ├── attendance/       # Reusable attendance contracts, services, and MCP tools
 │       ├── audit.py        # Audit ORM model and persistence
 │       ├── audit_middleware.py # Cross-cutting MCP tool auditing
+│       ├── catalog/          # Reusable catalog contracts, services, and MCP tools
 │       ├── dependencies.py # Production and test infrastructure composition
+│       ├── identity.py     # Requester identity and MVP resolver
 │       ├── server.py       # Server composition and `mcp` entry point
-│       └── tools/          # Isolated tool registrations
 ├── tests/
 │   ├── unit/               # Isolated model and settings tests
 │   ├── integration/        # FastMCP and database-backed behavior tests
