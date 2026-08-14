@@ -9,16 +9,25 @@ from fastmcp import Context, FastMCP
 from sqlalchemy.orm import Session, sessionmaker
 
 from attendance_crmt.attendance.contracts import (
+    AttendanceEventDetail,
     AttendanceEventPage,
     AttendanceEventQuery,
     CurrentAttendancePage,
     CurrentAttendanceQuery,
+    DailyAttendance,
+    DailyAttendanceQuery,
     EmployeeAttendanceAnalysis,
     EmployeeAttendanceAnalysisQuery,
     EmployeeAttendanceSummary,
     LiveAttendanceStatus,
     OrganizationAttendanceAnalysis,
     OrganizationAttendanceAnalysisQuery,
+)
+from attendance_crmt.attendance.services import (
+    get_attendance_event as query_attendance_event,
+)
+from attendance_crmt.attendance.services import (
+    get_daily_attendance as query_daily_attendance,
 )
 from attendance_crmt.attendance.services import (
     get_employee_attendance_analysis as query_employee_attendance_analysis,
@@ -68,6 +77,38 @@ def register_attendance_tools(
                 limit=limit,
                 offset=offset,
             ),
+        )
+
+    @server.tool(
+        description="Return one attendance event, including recorded audit metadata."
+    )
+    def get_attendance_event(
+        attendance_event_id: int,
+        ctx: Context | None = None,
+    ) -> AttendanceEventDetail:
+        """Return an administrator-authorized attendance-event detail."""
+        return query_attendance_event(
+            requester=requester_resolver.resolve(ctx),
+            session_factory=session_factory,
+            attendance_event_id=attendance_event_id,
+        )
+
+    @server.tool(
+        description=(
+            "Return one employee's local-calendar daily attendance events and "
+            "calculated planned-versus-logged outcome."
+        )
+    )
+    def get_daily_attendance(
+        employee_id: int,
+        day: date,
+        ctx: Context | None = None,
+    ) -> DailyAttendance:
+        """Return an administrator-authorized daily attendance view."""
+        return query_daily_attendance(
+            requester=requester_resolver.resolve(ctx),
+            session_factory=session_factory,
+            query=DailyAttendanceQuery(employee_id=employee_id, day=day),
         )
 
     @server.tool(

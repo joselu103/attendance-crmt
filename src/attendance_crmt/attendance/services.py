@@ -10,12 +10,15 @@ from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from attendance_crmt.attendance.contracts import (
     AttendanceAnalysisDay,
+    AttendanceEventDetail,
     AttendanceEventPage,
     AttendanceEventQuery,
     AttendanceEventSummary,
     CurrentAttendancePage,
     CurrentAttendanceQuery,
     CurrentAttendanceSummary,
+    DailyAttendance,
+    DailyAttendanceQuery,
     EmployeeAttendanceAnalysis,
     EmployeeAttendanceAnalysisQuery,
     EmployeeAttendanceAnalysisSummary,
@@ -70,23 +73,107 @@ def list_attendance_events(
         )
     has_next_page = len(events) > query.limit
     return AttendanceEventPage(
-        items=[
-            AttendanceEventSummary(
-                attendance_event_id=event.att_id,
-                employee_id=event.att_user_id,
-                punch_type=(
-                    event.punch_type.punch_type_desc if event.punch_type else None
-                ),
-                location=event.location.lokacija_opis if event.location else None,
-                checked_in_at=event.att_in,
-                checked_out_at=event.att_out,
-                note=event.att_opomba,
-            )
-            for event in events[: query.limit]
-        ],
+        items=[_attendance_event_summary(event) for event in events[: query.limit]],
         limit=query.limit,
         offset=query.offset,
         next_offset=query.offset + query.limit if has_next_page else None,
+    )
+
+
+def get_attendance_event(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    attendance_event_id: int,
+) -> AttendanceEventDetail:
+    """Return one administrator-authorized attendance event with audit metadata."""
+    if "admin" not in requester.roles:
+        raise PermissionError("Only administrators may view attendance events.")
+    with session_factory() as session:
+        event = session.scalar(
+            select(AttendanceLog)
+            .options(
+                selectinload(AttendanceLog.location),
+                selectinload(AttendanceLog.punch_type),
+            )
+            .where(AttendanceLog.att_id == attendance_event_id)
+        )
+    if event is None:
+        raise LookupError(f"Attendance event {attendance_event_id} was not found.")
+    return AttendanceEventDetail(
+        **_attendance_event_summary(event).model_dump(),
+        edited=event.att_edited == 1,
+        recorded_at=event.inserted,
+        modified_at=event.modified,
+        modified_by=event.user_id,
+        data_source=event.data_source,
+    )
+
+
+def get_daily_attendance(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: DailyAttendanceQuery,
+) -> DailyAttendance:
+    """Return raw events and the established daily analysis for one employee."""
+    analysis = get_employee_attendance_analysis(
+        requester=requester,
+        session_factory=session_factory,
+        query=EmployeeAttendanceAnalysisQuery(
+            employee_id=query.employee_id,
+            start_date=query.day,
+            end_date=query.day,
+        ),
+    )
+    start_at = datetime.combine(query.day, time.min)
+    end_exclusive = start_at + timedelta(days=1)
+    with session_factory() as session:
+        events = list(
+            session.scalars(
+                select(AttendanceLog)
+                .options(
+                    selectinload(AttendanceLog.location),
+                    selectinload(AttendanceLog.punch_type),
+                )
+                .where(
+                    AttendanceLog.att_user_id == query.employee_id,
+                    AttendanceLog.att_in < end_exclusive,
+                    or_(
+                        AttendanceLog.att_out.is_(None),
+                        AttendanceLog.att_out >= start_at,
+                    ),
+                )
+                .order_by(AttendanceLog.att_in, AttendanceLog.att_id)
+            )
+        )
+    day = analysis.days[0]
+    return DailyAttendance(
+        employee_id=query.employee_id,
+        day=query.day,
+        events=[_attendance_event_summary(event) for event in events],
+        logged_hours=day.logged_hours,
+        known_planned_hours=day.known_planned_hours,
+        balance_hours=(
+            day.logged_hours - day.known_planned_hours
+            if day.known_planned_hours is not None
+            else None
+        ),
+        planned_hours_complete=analysis.planned_hours_complete,
+        incomplete_interval_count=day.incomplete_interval_count,
+        anomaly_count=day.anomaly_count,
+    )
+
+
+def _attendance_event_summary(event: AttendanceLog) -> AttendanceEventSummary:
+    return AttendanceEventSummary(
+        attendance_event_id=event.att_id,
+        employee_id=event.att_user_id,
+        punch_type=event.punch_type.punch_type_desc if event.punch_type else None,
+        location=event.location.lokacija_opis if event.location else None,
+        checked_in_at=event.att_in,
+        checked_out_at=event.att_out,
+        note=event.att_opomba,
     )
 
 

@@ -65,6 +65,41 @@ class AttendanceEventPage(BaseModel):
     next_offset: int | None
 
 
+class AttendanceEventDetail(AttendanceEventSummary):
+    """One attendance event including recorded audit metadata."""
+
+    edited: bool
+    recorded_at: datetime | None
+    modified_at: datetime | None
+    modified_by: str | None
+    data_source: str | None
+
+
+class DailyAttendanceQuery(BaseModel):
+    """Validated daily attendance selection for one employee."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    day: date
+
+
+class DailyAttendance(BaseModel):
+    """One day's raw events and calculated attendance outcome."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    day: date
+    events: list[AttendanceEventSummary]
+    logged_hours: Decimal
+    known_planned_hours: Decimal | None
+    balance_hours: Decimal | None
+    planned_hours_complete: bool
+    incomplete_interval_count: int
+    anomaly_count: int
+
+
 LiveAttendanceStatus = Literal[
     "office",
     "remote",
