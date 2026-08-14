@@ -6,8 +6,25 @@ from fastmcp import FastMCP
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
-from attendance_crmt.catalog.contracts import EmployeePage, EmployeePageQuery
-from attendance_crmt.catalog.services import list_active_employees
+from attendance_crmt.catalog.contracts import (
+    EmployeePage,
+    EmployeePageQuery,
+    EmployeeSummary,
+    LocationSummary,
+    PunchTypeSummary,
+)
+from attendance_crmt.catalog.services import (
+    get_employee as query_employee,
+)
+from attendance_crmt.catalog.services import (
+    list_active_employees,
+)
+from attendance_crmt.catalog.services import (
+    list_locations as query_locations,
+)
+from attendance_crmt.catalog.services import (
+    list_punch_types as query_punch_types,
+)
 
 
 def register_catalog_tools(
@@ -31,6 +48,32 @@ def register_catalog_tools(
             session_factory=session_factory,
             query=query,
         )
+
+    @server.tool(description="Return one employee's directory-safe metadata by ID.")
+    def get_employee(employee_id: int) -> EmployeeSummary:
+        """Resolve one employee through the catalog service."""
+        return query_employee(
+            session_factory=session_factory,
+            employee_id=employee_id,
+        )
+
+    @server.tool(
+        description=(
+            "List configured punch types and their server-derived attendance locations. "
+            "Locations are reference data, not caller-selected input."
+        )
+    )
+    def list_punch_types(active_only: bool = True) -> list[PunchTypeSummary]:
+        """Return configured punch-type reference data."""
+        return query_punch_types(
+            session_factory=session_factory,
+            active_only=active_only,
+        )
+
+    @server.tool(description="List attendance-event location reference data.")
+    def list_locations() -> list[LocationSummary]:
+        """Return location reference data."""
+        return query_locations(session_factory=session_factory)
 
 
 def _validation_message(error: ValidationError) -> str:

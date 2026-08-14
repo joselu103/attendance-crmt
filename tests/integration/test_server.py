@@ -15,6 +15,9 @@ def test_create_server_registers_catalog_tools(server_dependencies) -> None:
     assert server.name == "attendance-crmt"
     assert [tool.name for tool in tools] == [
         "list_employees",
+        "get_employee",
+        "list_punch_types",
+        "list_locations",
         "list_attendance_events",
         "get_current_attendance",
         "get_employee_attendance_analysis",

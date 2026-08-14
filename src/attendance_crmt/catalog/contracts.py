@@ -45,3 +45,24 @@ class EmployeePage(BaseModel):
     limit: int
     offset: int
     next_offset: int | None
+
+
+class PunchTypeSummary(BaseModel):
+    """Configured punch type with its server-derived attendance location."""
+
+    model_config = ConfigDict(frozen=True)
+
+    punch_type_id: int
+    punch_type: str | None
+    active: int | None
+    derived_location_id: int | None
+    derived_location: str | None
+
+
+class LocationSummary(BaseModel):
+    """Reference location available on recorded attendance events."""
+
+    model_config = ConfigDict(frozen=True)
+
+    location_id: int
+    location: str | None

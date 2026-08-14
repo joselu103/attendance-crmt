@@ -9,8 +9,28 @@ from attendance_crmt.catalog.contracts import (
     EmployeePage,
     EmployeePageQuery,
     EmployeeSummary,
+    LocationSummary,
+    PunchTypeSummary,
 )
-from attendance_crmt.models import Employee
+from attendance_crmt.models import Employee, Location, PunchType
+
+_PUNCH_TYPE_LOCATION_IDS = {
+    1: 2,
+    2: 3,
+    3: 1,
+    4: 5,
+    5: 5,
+    6: 4,
+    7: 5,
+    8: 5,
+    9: 5,
+    10: 4,
+    11: 4,
+    12: 5,
+    13: 5,
+    14: 5,
+    15: 5,
+}
 
 
 def list_active_employees(
@@ -44,4 +64,74 @@ def list_active_employees(
         limit=query.limit,
         offset=query.offset,
         next_offset=query.offset + query.limit if has_next_page else None,
+    )
+
+
+def get_employee(
+    *, session_factory: sessionmaker[Session], employee_id: int
+) -> EmployeeSummary:
+    """Return one employee's directory-safe metadata."""
+    with session_factory() as session:
+        employee = session.get(Employee, employee_id)
+    if employee is None:
+        raise LookupError(f"Employee {employee_id} was not found.")
+    return _employee_summary(employee)
+
+
+def list_punch_types(
+    *, session_factory: sessionmaker[Session], active_only: bool = True
+) -> list[PunchTypeSummary]:
+    """Return configured punch types with their confirmed derived locations."""
+    with session_factory() as session:
+        punch_type_statement = select(PunchType).order_by(PunchType.punch_type_id)
+        if active_only:
+            punch_type_statement = punch_type_statement.where(PunchType.active == 1)
+        punch_types = list(session.scalars(punch_type_statement))
+        locations_by_id = {
+            location.lokacija_id: location
+            for location in session.scalars(select(Location))
+        }
+    return [
+        PunchTypeSummary(
+            punch_type_id=punch_type.punch_type_id,
+            punch_type=punch_type.punch_type_desc,
+            active=punch_type.active,
+            derived_location_id=_PUNCH_TYPE_LOCATION_IDS.get(punch_type.punch_type_id),
+            derived_location=(
+                locations_by_id[location_id].lokacija_opis
+                if (
+                    location_id := _PUNCH_TYPE_LOCATION_IDS.get(
+                        punch_type.punch_type_id
+                    )
+                )
+                in locations_by_id
+                else None
+            ),
+        )
+        for punch_type in punch_types
+    ]
+
+
+def list_locations(*, session_factory: sessionmaker[Session]) -> list[LocationSummary]:
+    """Return recorded-attendance locations in stable identifier order."""
+    with session_factory() as session:
+        locations = list(
+            session.scalars(select(Location).order_by(Location.lokacija_id))
+        )
+    return [
+        LocationSummary(
+            location_id=location.lokacija_id, location=location.lokacija_opis
+        )
+        for location in locations
+    ]
+
+
+def _employee_summary(employee: Employee) -> EmployeeSummary:
+    return EmployeeSummary(
+        employee_id=employee.izvajalec_id,
+        first_name=employee.ime,
+        last_name=employee.priimek,
+        username=employee.username,
+        email=employee.email,
+        active=employee.active,
     )
