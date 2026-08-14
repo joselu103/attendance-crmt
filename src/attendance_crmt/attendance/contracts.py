@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -131,3 +132,60 @@ class CurrentAttendancePage(BaseModel):
     def serialize_as_of(self, value: datetime) -> str:
         """Expose the requested local timestamp with its Europe/Ljubljana offset."""
         return _serialize_local_datetime(value)
+
+
+class EmployeeAttendanceAnalysisQuery(BaseModel):
+    """Validated employee reporting range, limited to 31 calendar days."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_range(self) -> EmployeeAttendanceAnalysisQuery:
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date.")
+        if (self.end_date - self.start_date).days >= 31:
+            raise ValueError("reporting date range must not exceed 31 calendar days.")
+        return self
+
+
+class PunchTypeHours(BaseModel):
+    """Completed, non-anomalous interval duration grouped by punch type."""
+
+    model_config = ConfigDict(frozen=True)
+
+    punch_type_id: int | None
+    punch_type: str | None
+    hours: Decimal
+
+
+class AttendanceAnalysisDay(BaseModel):
+    """One calendar day's planned and logged attendance result."""
+
+    model_config = ConfigDict(frozen=True)
+
+    day: date
+    known_planned_hours: Decimal | None
+    logged_hours: Decimal
+    missing_attendance: bool
+    incomplete_interval_count: int
+    anomaly_count: int
+
+
+class EmployeeAttendanceAnalysis(BaseModel):
+    """Transport-independent monthly attendance analysis for one employee."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    start_date: date
+    end_date: date
+    logged_hours: Decimal
+    known_planned_hours: Decimal
+    balance_hours: Decimal | None
+    planned_hours_complete: bool
+    punch_type_totals: list[PunchTypeHours]
+    days: list[AttendanceAnalysisDay]

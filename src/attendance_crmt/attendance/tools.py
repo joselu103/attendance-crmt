@@ -13,7 +13,12 @@ from attendance_crmt.attendance.contracts import (
     AttendanceEventQuery,
     CurrentAttendancePage,
     CurrentAttendanceQuery,
+    EmployeeAttendanceAnalysis,
+    EmployeeAttendanceAnalysisQuery,
     LiveAttendanceStatus,
+)
+from attendance_crmt.attendance.services import (
+    get_employee_attendance_analysis as query_employee_attendance_analysis,
 )
 from attendance_crmt.attendance.services import (
     list_attendance_events as query_attendance_events,
@@ -79,5 +84,28 @@ def register_attendance_tools(
                 status=status,
                 limit=limit,
                 offset=offset,
+            ),
+        )
+
+    @server.tool(
+        description=(
+            "Analyze one employee's attendance over an inclusive Europe/Ljubljana "
+            "date range of up to 31 calendar days."
+        )
+    )
+    def get_employee_attendance_analysis(
+        employee_id: int,
+        start_date: date,
+        end_date: date,
+        ctx: Context | None = None,
+    ) -> EmployeeAttendanceAnalysis:
+        """Return grouped hours, planned-work comparison, and daily attendance."""
+        return query_employee_attendance_analysis(
+            requester=requester_resolver.resolve(ctx),
+            session_factory=session_factory,
+            query=EmployeeAttendanceAnalysisQuery(
+                employee_id=employee_id,
+                start_date=start_date,
+                end_date=end_date,
             ),
         )
