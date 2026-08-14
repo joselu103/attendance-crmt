@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
+
+_EUROPE_LJUBLJANA = ZoneInfo("Europe/Ljubljana")
+
+
+def _serialize_local_datetime(value: datetime) -> str:
+    """Serialize a database-local timestamp as RFC 3339 Europe/Ljubljana time."""
+    return value.replace(tzinfo=_EUROPE_LJUBLJANA).isoformat()
 
 
 class AttendanceEventQuery(BaseModel):
@@ -53,3 +62,72 @@ class AttendanceEventPage(BaseModel):
     limit: int
     offset: int
     next_offset: int | None
+
+
+LiveAttendanceStatus = Literal[
+    "office",
+    "remote",
+    "customer_site",
+    "break",
+    "absence",
+    "no_status",
+    "unknown",
+]
+
+
+class CurrentAttendanceQuery(BaseModel):
+    """Validated point-in-time filters for active employee presence."""
+
+    model_config = ConfigDict(frozen=True)
+
+    as_of: datetime
+    status: LiveAttendanceStatus | None = None
+    limit: int = 50
+    offset: int = 0
+
+    @model_validator(mode="after")
+    def validate_pagination(self) -> CurrentAttendanceQuery:
+        if self.as_of.tzinfo is not None:
+            raise ValueError("as_of must be a Europe/Ljubljana local timestamp.")
+        if not 1 <= self.limit <= 100:
+            raise ValueError("limit must be between 1 and 100.")
+        if self.offset < 0:
+            raise ValueError("offset must not be negative.")
+        return self
+
+
+class CurrentAttendanceSummary(BaseModel):
+    """An active employee's effective attendance state at one instant."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    first_name: str
+    last_name: str
+    status: LiveAttendanceStatus
+    attendance_event_id: int | None
+    started_at: datetime | None
+    punch_type: str | None
+    location: str | None
+
+    @field_serializer("started_at", when_used="json")
+    def serialize_started_at(self, value: datetime | None) -> str | None:
+        """Expose database-local timestamps with their Europe/Ljubljana offset."""
+        return _serialize_local_datetime(value) if value is not None else None
+
+
+class CurrentAttendancePage(BaseModel):
+    """A bounded page of active employees' point-in-time attendance states."""
+
+    model_config = ConfigDict(frozen=True)
+
+    items: list[CurrentAttendanceSummary]
+    as_of: datetime
+    limit: int
+    offset: int
+    next_offset: int | None
+
+    @field_serializer("as_of", when_used="json")
+    def serialize_as_of(self, value: datetime) -> str:
+        """Expose the requested local timestamp with its Europe/Ljubljana offset."""
+        return _serialize_local_datetime(value)

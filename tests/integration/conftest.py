@@ -18,7 +18,13 @@ from attendance_crmt.audit import (
 )
 from attendance_crmt.database import create_session_factory
 from attendance_crmt.dependencies import ServerDependencies
-from attendance_crmt.models import AttendanceLog, Employee, Location, PunchType
+from attendance_crmt.models import (
+    AttendanceLog,
+    Employee,
+    Location,
+    PlannedWork,
+    PunchType,
+)
 
 
 @compiles(SMALLDATETIME, "sqlite")
@@ -71,6 +77,7 @@ def employee_session_factory(sqlite_engine: Engine) -> sessionmaker[Session]:
         Location.__table__,
         PunchType.__table__,
         AttendanceLog.__table__,
+        PlannedWork.__table__,
     ):
         cast(Table, table).create(sqlite_engine)
     return create_session_factory(sqlite_engine)
