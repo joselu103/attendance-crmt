@@ -100,6 +100,44 @@ class DailyAttendance(BaseModel):
     anomaly_count: int
 
 
+class PlannedWorkQuery(BaseModel):
+    """Validated employee planned-work range, limited to 31 calendar days."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_range(self) -> PlannedWorkQuery:
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date.")
+        if (self.end_date - self.start_date).days >= 31:
+            raise ValueError("reporting date range must not exceed 31 calendar days.")
+        return self
+
+
+class PlannedWorkDay(BaseModel):
+    """One recorded employee daily planned-hours row."""
+
+    model_config = ConfigDict(frozen=True)
+
+    day: date
+    planned_hours: Decimal | None
+
+
+class PlannedWorkResult(BaseModel):
+    """Recorded planned-work rows; unlisted dates have unknown planned hours."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    start_date: date
+    end_date: date
+    items: list[PlannedWorkDay]
+
+
 LiveAttendanceStatus = Literal[
     "office",
     "remote",

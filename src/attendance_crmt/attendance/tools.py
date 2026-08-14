@@ -22,6 +22,8 @@ from attendance_crmt.attendance.contracts import (
     LiveAttendanceStatus,
     OrganizationAttendanceAnalysis,
     OrganizationAttendanceAnalysisQuery,
+    PlannedWorkQuery,
+    PlannedWorkResult,
 )
 from attendance_crmt.attendance.services import (
     get_attendance_event as query_attendance_event,
@@ -37,6 +39,9 @@ from attendance_crmt.attendance.services import (
 )
 from attendance_crmt.attendance.services import (
     get_organization_attendance_analysis as query_organization_attendance_analysis,
+)
+from attendance_crmt.attendance.services import (
+    get_planned_work as query_planned_work,
 )
 from attendance_crmt.attendance.services import (
     list_attendance_events as query_attendance_events,
@@ -109,6 +114,29 @@ def register_attendance_tools(
             requester=requester_resolver.resolve(ctx),
             session_factory=session_factory,
             query=DailyAttendanceQuery(employee_id=employee_id, day=day),
+        )
+
+    @server.tool(
+        description=(
+            "Return recorded daily planned-work hours for one employee over an "
+            "inclusive Europe/Ljubljana range of up to 31 calendar days."
+        )
+    )
+    def get_planned_work(
+        employee_id: int,
+        start_date: date,
+        end_date: date,
+        ctx: Context | None = None,
+    ) -> PlannedWorkResult:
+        """Return administrator-authorized recorded planned-work rows."""
+        return query_planned_work(
+            requester=requester_resolver.resolve(ctx),
+            session_factory=session_factory,
+            query=PlannedWorkQuery(
+                employee_id=employee_id,
+                start_date=start_date,
+                end_date=end_date,
+            ),
         )
 
     @server.tool(

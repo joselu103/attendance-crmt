@@ -26,6 +26,9 @@ from attendance_crmt.attendance.contracts import (
     LiveAttendanceStatus,
     OrganizationAttendanceAnalysis,
     OrganizationAttendanceAnalysisQuery,
+    PlannedWorkDay,
+    PlannedWorkQuery,
+    PlannedWorkResult,
     PunchTypeHours,
 )
 from attendance_crmt.identity import Requester
@@ -174,6 +177,44 @@ def _attendance_event_summary(event: AttendanceLog) -> AttendanceEventSummary:
         checked_in_at=event.att_in,
         checked_out_at=event.att_out,
         note=event.att_opomba,
+    )
+
+
+def get_planned_work(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: PlannedWorkQuery,
+) -> PlannedWorkResult:
+    """Return an administrator-authorized employee planned-work range."""
+    if "admin" not in requester.roles:
+        raise PermissionError(
+            "Only administrators may view another employee's planned work."
+        )
+    start_at = datetime.combine(query.start_date, time.min)
+    end_exclusive = datetime.combine(query.end_date + timedelta(days=1), time.min)
+    with session_factory() as session:
+        planned_work = list(
+            session.scalars(
+                select(PlannedWork)
+                .where(
+                    PlannedWork.izvajalec_id == query.employee_id,
+                    PlannedWork.datum_id >= start_at,
+                    PlannedWork.datum_id < end_exclusive,
+                )
+                .order_by(PlannedWork.datum_id)
+            )
+        )
+    return PlannedWorkResult(
+        employee_id=query.employee_id,
+        start_date=query.start_date,
+        end_date=query.end_date,
+        items=[
+            PlannedWorkDay(
+                day=planned.datum_id.date(), planned_hours=planned.att_planirano_ur_va
+            )
+            for planned in planned_work
+        ],
     )
 
 
