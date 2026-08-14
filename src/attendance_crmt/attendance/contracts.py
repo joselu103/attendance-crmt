@@ -40,6 +40,27 @@ class AttendanceEventQuery(BaseModel):
         return self
 
 
+class MyAttendanceEventQuery(BaseModel):
+    """Validated pagination criteria for the requester-scoped event history."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date
+    limit: int = 50
+    offset: int = 0
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> MyAttendanceEventQuery:
+        if not 1 <= self.limit <= 100:
+            raise ValueError("limit must be between 1 and 100.")
+        if self.offset < 0:
+            raise ValueError("offset must not be negative.")
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date.")
+        return self
+
+
 class AttendanceEventSummary(BaseModel):
     """A read-only attendance event returned by the application service."""
 

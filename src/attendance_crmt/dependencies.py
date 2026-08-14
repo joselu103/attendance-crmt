@@ -44,4 +44,5 @@ def create_production_dependencies(settings: Settings) -> ServerDependencies:
     return ServerDependencies(
         attendance_session_factory=attendance_session_factory,
         audit_log=AuditLog(audit_session_factory),
+        requester_resolver=create_mvp_requester_resolver(settings.mvp_employee_id),
     )

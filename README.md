@@ -138,6 +138,8 @@ service, which future REST endpoints can reuse.
 - `list_punch_types` — configured punch types with server-derived locations.
 - `list_locations` — attendance-event location reference data.
 - `list_attendance_events` — administrator-only raw attendance-event drill-down.
+- `list_my_attendance_events` — requester-scoped raw attendance-event history;
+  its employee identity is server-derived and never a tool argument.
 - `get_attendance_event` — administrator-only event detail including recorded audit
   metadata.
 - `get_daily_attendance` — administrator-only local-calendar event and

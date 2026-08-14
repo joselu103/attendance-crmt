@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ATTENDANCE_DB_URL_ENV = "ATTENDANCE_DATABASE_URL"
 AUDIT_DB_PATH_ENV = "ATTENDANCE_AUDIT_DATABASE_PATH"
+MVP_EMPLOYEE_ID_ENV = "ATTENDANCE_MVP_EMPLOYEE_ID"
 
 
 class Settings(BaseSettings):
@@ -28,6 +29,10 @@ class Settings(BaseSettings):
     audit_db_path: Path = Field(
         default=Path("data/audit.sqlite3"),
         validation_alias=AUDIT_DB_PATH_ENV,
+    )
+    mvp_employee_id: int | None = Field(
+        default=None,
+        validation_alias=MVP_EMPLOYEE_ID_ENV,
     )
 
 

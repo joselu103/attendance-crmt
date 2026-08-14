@@ -28,6 +28,7 @@ from attendance_crmt.attendance.contracts import (
     EmployeeAttendanceAnalysisSummary,
     EmployeeAttendanceSummary,
     LiveAttendanceStatus,
+    MyAttendanceEventQuery,
     OrganizationAttendanceAnalysis,
     OrganizationAttendanceAnalysisQuery,
     PlannedWorkDay,
@@ -57,7 +58,38 @@ def list_attendance_events(
     """Authorize the requester and return one employee's attendance events."""
     if "admin" not in requester.roles:
         raise PermissionError("Only administrators may view another employee's events.")
+    return _list_attendance_events_for_employee(
+        session_factory=session_factory,
+        query=query,
+    )
 
+
+def list_my_attendance_events(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: MyAttendanceEventQuery,
+) -> AttendanceEventPage:
+    """Return the requester-scoped attendance history without a target-ID input."""
+    if requester.employee_id is None:
+        raise PermissionError("The requester is not mapped to an employee.")
+    return _list_attendance_events_for_employee(
+        session_factory=session_factory,
+        query=AttendanceEventQuery(
+            employee_id=requester.employee_id,
+            start_date=query.start_date,
+            end_date=query.end_date,
+            limit=query.limit,
+            offset=query.offset,
+        ),
+    )
+
+
+def _list_attendance_events_for_employee(
+    *,
+    session_factory: sessionmaker[Session],
+    query: AttendanceEventQuery,
+) -> AttendanceEventPage:
     start_at = datetime.combine(query.start_date, time.min)
     end_at = datetime.combine(query.end_date, time.max)
     with session_factory() as session:

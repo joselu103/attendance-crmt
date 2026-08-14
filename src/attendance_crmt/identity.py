@@ -12,6 +12,7 @@ class Requester:
 
     actor_id: str
     roles: frozenset[str]
+    employee_id: int | None = None
 
 
 class RequesterResolver(Protocol):
@@ -33,8 +34,14 @@ class StaticRequesterResolver:
         return self.requester
 
 
-def create_mvp_requester_resolver() -> StaticRequesterResolver:
+def create_mvp_requester_resolver(
+    employee_id: int | None = None,
+) -> StaticRequesterResolver:
     """Create the fixed read-only MVP administrator requester."""
     return StaticRequesterResolver(
-        Requester(actor_id="mvp-admin", roles=frozenset({"admin"}))
+        Requester(
+            actor_id="mvp-admin",
+            roles=frozenset({"admin"}),
+            employee_id=employee_id,
+        )
     )
