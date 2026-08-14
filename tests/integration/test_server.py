@@ -25,6 +25,7 @@ def test_create_server_registers_catalog_tools(server_dependencies) -> None:
         "get_current_attendance",
         "get_employee_attendance_analysis",
         "get_employee_attendance_summary",
+        "get_exceptions",
         "get_organization_attendance_analysis",
     ]
 

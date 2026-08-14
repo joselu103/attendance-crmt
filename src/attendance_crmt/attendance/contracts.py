@@ -336,3 +336,60 @@ class OrganizationAttendanceAnalysis(BaseModel):
     limit: int
     offset: int
     next_offset: int | None
+
+
+AttendanceExceptionKind = Literal[
+    "missing_attendance",
+    "incomplete_interval",
+    "attendance_anomaly",
+]
+
+
+class AttendanceExceptionsQuery(BaseModel):
+    """Validated bounded operational exception report selection."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date
+    employee_ids: list[int] | None = None
+    limit: int = 50
+    offset: int = 0
+
+    @model_validator(mode="after")
+    def validate_range_and_pagination(self) -> AttendanceExceptionsQuery:
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date.")
+        if (self.end_date - self.start_date).days >= 31:
+            raise ValueError("reporting date range must not exceed 31 calendar days.")
+        if not 1 <= self.limit <= 100:
+            raise ValueError("limit must be between 1 and 100.")
+        if self.offset < 0:
+            raise ValueError("offset must not be negative.")
+        return self
+
+
+class AttendanceException(BaseModel):
+    """One employee-day operational attendance exception."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    first_name: str
+    last_name: str
+    day: date
+    kind: AttendanceExceptionKind
+    count: int
+
+
+class AttendanceExceptionsPage(BaseModel):
+    """A bounded page of employee-day attendance exceptions."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date
+    items: list[AttendanceException]
+    limit: int
+    offset: int
+    next_offset: int | None

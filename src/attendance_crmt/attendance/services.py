@@ -14,6 +14,10 @@ from attendance_crmt.attendance.contracts import (
     AttendanceEventPage,
     AttendanceEventQuery,
     AttendanceEventSummary,
+    AttendanceException,
+    AttendanceExceptionKind,
+    AttendanceExceptionsPage,
+    AttendanceExceptionsQuery,
     CurrentAttendancePage,
     CurrentAttendanceQuery,
     CurrentAttendanceSummary,
@@ -523,6 +527,82 @@ def get_organization_attendance_analysis(
         limit=query.limit,
         offset=query.offset,
         next_offset=query.offset + query.limit if has_next_page else None,
+    )
+
+
+def get_attendance_exceptions(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: AttendanceExceptionsQuery,
+) -> AttendanceExceptionsPage:
+    """Return a bounded administrator operational report of daily exceptions."""
+    if "admin" not in requester.roles:
+        raise PermissionError("Only administrators may view attendance exceptions.")
+    with session_factory() as session:
+        statement = select(Employee).where(Employee.active == 1)
+        if query.employee_ids is not None:
+            statement = statement.where(Employee.izvajalec_id.in_(query.employee_ids))
+        employees = list(session.scalars(statement.order_by(Employee.izvajalec_id)))
+
+    exceptions: list[AttendanceException] = []
+    for employee in employees:
+        analysis = get_employee_attendance_analysis(
+            requester=requester,
+            session_factory=session_factory,
+            query=EmployeeAttendanceAnalysisQuery(
+                employee_id=employee.izvajalec_id,
+                start_date=query.start_date,
+                end_date=query.end_date,
+            ),
+        )
+        for day in analysis.days:
+            if day.missing_attendance:
+                exceptions.append(
+                    _attendance_exception(employee, day.day, "missing_attendance", 1)
+                )
+            if day.incomplete_interval_count:
+                exceptions.append(
+                    _attendance_exception(
+                        employee,
+                        day.day,
+                        "incomplete_interval",
+                        day.incomplete_interval_count,
+                    )
+                )
+            if day.anomaly_count:
+                exceptions.append(
+                    _attendance_exception(
+                        employee,
+                        day.day,
+                        "attendance_anomaly",
+                        day.anomaly_count,
+                    )
+                )
+    has_next_page = len(exceptions) > query.offset + query.limit
+    return AttendanceExceptionsPage(
+        start_date=query.start_date,
+        end_date=query.end_date,
+        items=exceptions[query.offset : query.offset + query.limit],
+        limit=query.limit,
+        offset=query.offset,
+        next_offset=query.offset + query.limit if has_next_page else None,
+    )
+
+
+def _attendance_exception(
+    employee: Employee,
+    day: date,
+    kind: AttendanceExceptionKind,
+    count: int,
+) -> AttendanceException:
+    return AttendanceException(
+        employee_id=employee.izvajalec_id,
+        first_name=employee.ime,
+        last_name=employee.priimek,
+        day=day,
+        kind=kind,
+        count=count,
     )
 
 

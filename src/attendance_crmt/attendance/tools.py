@@ -12,6 +12,8 @@ from attendance_crmt.attendance.contracts import (
     AttendanceEventDetail,
     AttendanceEventPage,
     AttendanceEventQuery,
+    AttendanceExceptionsPage,
+    AttendanceExceptionsQuery,
     CurrentAttendancePage,
     CurrentAttendanceQuery,
     DailyAttendance,
@@ -27,6 +29,9 @@ from attendance_crmt.attendance.contracts import (
 )
 from attendance_crmt.attendance.services import (
     get_attendance_event as query_attendance_event,
+)
+from attendance_crmt.attendance.services import (
+    get_attendance_exceptions as query_attendance_exceptions,
 )
 from attendance_crmt.attendance.services import (
     get_daily_attendance as query_daily_attendance,
@@ -208,6 +213,33 @@ def register_attendance_tools(
                 employee_id=employee_id,
                 start_date=start_date,
                 end_date=end_date,
+            ),
+        )
+
+    @server.tool(
+        description=(
+            "Report missing attendance, incomplete intervals, and invalid or "
+            "overlapping interval anomalies over a bounded Europe/Ljubljana range."
+        )
+    )
+    def get_exceptions(
+        start_date: date,
+        end_date: date,
+        employee_ids: list[int] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        ctx: Context | None = None,
+    ) -> AttendanceExceptionsPage:
+        """Return an administrator-authorized paginated exception report."""
+        return query_attendance_exceptions(
+            requester=requester_resolver.resolve(ctx),
+            session_factory=session_factory,
+            query=AttendanceExceptionsQuery(
+                start_date=start_date,
+                end_date=end_date,
+                employee_ids=employee_ids,
+                limit=limit,
+                offset=offset,
             ),
         )
 
