@@ -64,9 +64,9 @@ runtime; it is not copied into the image. Create `.env` before running
 Every successful or failed MCP tool interaction that reaches a registered tool
 is recorded in a local SQLite audit database. Audit persistence uses a separate
 SQLAlchemy metadata base, engine, and session factory, so it cannot interfere
-with the legacy SQL Server attendance mappings. Until the Teams bot introduces
-an authenticated caller identity, records use `actor_id = "mcp"` deliberately;
-they do not claim to identify an end user.
+with the production SQL Server attendance mappings. Audit records use the
+server-derived MVP requester identity; future MCP or REST authentication can
+replace that resolver without changing feature services.
 
 `ATTENDANCE_AUDIT_DATABASE_PATH` selects the database path and defaults to
 `data/audit.sqlite3`. The local `data/` directory is ignored by Git. Docker
@@ -127,12 +127,32 @@ uv run ruff format --check .
 └── uv.lock                 # Locked dependency graph
 ```
 
-## Adding a tool
+## Read-only attendance tools
 
-1. Add a focused module under `src/attendance_crmt/tools/`.
-2. Expose a registration function from `tools/__init__.py`.
-3. Register it in `create_server()` in `server.py`.
-4. Add a behavior-level test under `tests/`.
+The MCP surface is intentionally thin. Each feature tool resolves requester
+identity and delegates to a transport-independent contract and application
+service, which future REST endpoints can reuse.
+
+- `list_employees` — paginated active-employee discovery.
+- `list_attendance_events` — administrator-only raw attendance-event drill-down.
+- `get_current_attendance` — paginated live status for active employees; omitted
+  or `null` `as_of` uses the current Europe/Ljubljana local time.
+- `get_employee_attendance_analysis` — administrator-only 31-day employee
+  analysis with grouped logged hours, planned-work comparison, daily detail,
+  incomplete intervals, and overlap anomalies.
+- `get_organization_attendance_analysis` — administrator-only 31-day active
+  workforce totals plus paginated employee summaries without daily detail.
+
+## Adding a feature tool
+
+1. Add or extend immutable contracts and a reusable service under the relevant
+   feature package (for example, `attendance/`).
+2. Add a thin MCP adapter in that feature's `tools.py`; do not place query,
+   authorization, aggregation, or ORM mapping behavior in the adapter.
+3. Register the feature adapter from `create_server()` when it is not already
+   registered.
+4. Add direct service integration coverage plus MCP behavior coverage where the
+   transport boundary contributes behavior.
 
 ## License
 
