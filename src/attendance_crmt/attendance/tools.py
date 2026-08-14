@@ -16,9 +16,14 @@ from attendance_crmt.attendance.contracts import (
     EmployeeAttendanceAnalysis,
     EmployeeAttendanceAnalysisQuery,
     LiveAttendanceStatus,
+    OrganizationAttendanceAnalysis,
+    OrganizationAttendanceAnalysisQuery,
 )
 from attendance_crmt.attendance.services import (
     get_employee_attendance_analysis as query_employee_attendance_analysis,
+)
+from attendance_crmt.attendance.services import (
+    get_organization_attendance_analysis as query_organization_attendance_analysis,
 )
 from attendance_crmt.attendance.services import (
     list_attendance_events as query_attendance_events,
@@ -107,5 +112,30 @@ def register_attendance_tools(
                 employee_id=employee_id,
                 start_date=start_date,
                 end_date=end_date,
+            ),
+        )
+
+    @server.tool(
+        description=(
+            "Analyze attendance for all active employees over an inclusive "
+            "Europe/Ljubljana date range of up to 31 calendar days."
+        )
+    )
+    def get_organization_attendance_analysis(
+        start_date: date,
+        end_date: date,
+        limit: int = 50,
+        offset: int = 0,
+        ctx: Context | None = None,
+    ) -> OrganizationAttendanceAnalysis:
+        """Return organization totals and paginated employee analysis summaries."""
+        return query_organization_attendance_analysis(
+            requester=requester_resolver.resolve(ctx),
+            session_factory=session_factory,
+            query=OrganizationAttendanceAnalysisQuery(
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit,
+                offset=offset,
             ),
         )

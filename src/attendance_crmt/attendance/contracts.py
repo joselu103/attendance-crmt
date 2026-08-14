@@ -189,3 +189,60 @@ class EmployeeAttendanceAnalysis(BaseModel):
     planned_hours_complete: bool
     punch_type_totals: list[PunchTypeHours]
     days: list[AttendanceAnalysisDay]
+
+
+class OrganizationAttendanceAnalysisQuery(BaseModel):
+    """Validated organization reporting range and employee-summary pagination."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date
+    limit: int = 50
+    offset: int = 0
+
+    @model_validator(mode="after")
+    def validate_range_and_pagination(self) -> OrganizationAttendanceAnalysisQuery:
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date.")
+        if (self.end_date - self.start_date).days >= 31:
+            raise ValueError("reporting date range must not exceed 31 calendar days.")
+        if not 1 <= self.limit <= 100:
+            raise ValueError("limit must be between 1 and 100.")
+        if self.offset < 0:
+            raise ValueError("offset must not be negative.")
+        return self
+
+
+class EmployeeAttendanceAnalysisSummary(BaseModel):
+    """Organization-level employee result without the employee daily breakdown."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    first_name: str
+    last_name: str
+    logged_hours: Decimal
+    known_planned_hours: Decimal
+    balance_hours: Decimal | None
+    planned_hours_complete: bool
+    incomplete_interval_count: int
+    anomaly_count: int
+
+
+class OrganizationAttendanceAnalysis(BaseModel):
+    """Organization totals plus a bounded page of active-employee summaries."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date
+    active_employee_count: int
+    logged_hours: Decimal
+    known_planned_hours: Decimal
+    balance_hours: Decimal | None
+    planned_hours_complete: bool
+    items: list[EmployeeAttendanceAnalysisSummary]
+    limit: int
+    offset: int
+    next_offset: int | None

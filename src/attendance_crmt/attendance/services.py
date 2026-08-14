@@ -18,7 +18,10 @@ from attendance_crmt.attendance.contracts import (
     CurrentAttendanceSummary,
     EmployeeAttendanceAnalysis,
     EmployeeAttendanceAnalysisQuery,
+    EmployeeAttendanceAnalysisSummary,
     LiveAttendanceStatus,
+    OrganizationAttendanceAnalysis,
+    OrganizationAttendanceAnalysisQuery,
     PunchTypeHours,
 )
 from attendance_crmt.identity import Requester
@@ -333,3 +336,80 @@ def _daily_hours(start: datetime, end: datetime) -> list[tuple[date, Decimal]]:
         result.append((current.date(), _interval_hours(current, segment_end)))
         current = segment_end
     return result
+
+
+def get_organization_attendance_analysis(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: OrganizationAttendanceAnalysisQuery,
+) -> OrganizationAttendanceAnalysis:
+    """Return active-workforce totals and a page of employee analysis summaries."""
+    if "admin" not in requester.roles:
+        raise PermissionError("Only administrators may view organization analysis.")
+
+    with session_factory() as session:
+        employees = list(
+            session.scalars(
+                select(Employee)
+                .where(Employee.active == 1)
+                .order_by(Employee.priimek, Employee.ime, Employee.izvajalec_id)
+            )
+        )
+
+    summaries = [
+        _employee_analysis_summary(
+            employee,
+            get_employee_attendance_analysis(
+                requester=requester,
+                session_factory=session_factory,
+                query=EmployeeAttendanceAnalysisQuery(
+                    employee_id=employee.izvajalec_id,
+                    start_date=query.start_date,
+                    end_date=query.end_date,
+                ),
+            ),
+        )
+        for employee in employees
+    ]
+    logged_hours = sum((summary.logged_hours for summary in summaries), Decimal(0))
+    known_planned_hours = sum(
+        (summary.known_planned_hours for summary in summaries), Decimal(0)
+    )
+    planned_hours_complete = all(
+        summary.planned_hours_complete for summary in summaries
+    )
+    has_next_page = len(summaries) > query.offset + query.limit
+    return OrganizationAttendanceAnalysis(
+        start_date=query.start_date,
+        end_date=query.end_date,
+        active_employee_count=len(summaries),
+        logged_hours=logged_hours,
+        known_planned_hours=known_planned_hours,
+        balance_hours=(logged_hours - known_planned_hours)
+        if planned_hours_complete
+        else None,
+        planned_hours_complete=planned_hours_complete,
+        items=summaries[query.offset : query.offset + query.limit],
+        limit=query.limit,
+        offset=query.offset,
+        next_offset=query.offset + query.limit if has_next_page else None,
+    )
+
+
+def _employee_analysis_summary(
+    employee: Employee, analysis: EmployeeAttendanceAnalysis
+) -> EmployeeAttendanceAnalysisSummary:
+    return EmployeeAttendanceAnalysisSummary(
+        employee_id=employee.izvajalec_id,
+        first_name=employee.ime,
+        last_name=employee.priimek,
+        logged_hours=analysis.logged_hours,
+        known_planned_hours=analysis.known_planned_hours,
+        balance_hours=analysis.balance_hours,
+        planned_hours_complete=analysis.planned_hours_complete,
+        incomplete_interval_count=sum(
+            day.incomplete_interval_count for day in analysis.days
+        ),
+        anomaly_count=sum(day.anomaly_count for day in analysis.days),
+    )
