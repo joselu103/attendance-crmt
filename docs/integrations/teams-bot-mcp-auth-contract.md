@@ -1,7 +1,7 @@
 # Attendance Teams Bot ↔ Attendance CRMT MCP Authentication Contract
 
 - **Status:** Accepted for the first authenticated, read-only integration slice
-- **Contract version:** 1.0.0
+- **Contract version:** 1.1.0
 - **Owner:** Attendance CRMT MCP server
 - **Consumers:** Attendance Teams Bot and future authorized MCP clients
 
@@ -125,53 +125,58 @@ The server rejects a token unless all of the following hold:
 | `exp`, `nbf`, `iat` | Valid at the server clock with a small configured clock-skew allowance. |
 | `scp` | Contains `attendance.access`. |
 | `oid` | Present and a valid Entra object ID. It is the user identity key. |
+| `preferred_username` | Present and a nonblank Entra sign-in address for the interim email lookup. |
 | `azp` (or `appid` where applicable) | Equals an allow-listed Attendance Teams Bot client ID. |
 | token subject | Represents a delegated user; an app-only token is rejected. |
 
-`name`, `preferred_username`, `email`, and `upn` are display/contact attributes
-only. They are never accepted as proof of identity or authorization.
+`name`, `email`, and `upn` are display/contact attributes only. They are never
+accepted as proof of identity or authorization. During the interim email
+mapping, validated `preferred_username` is used solely to locate an active
+employee; the signed token remains the proof of identity.
 
 The server stores no raw access token. It creates a server-derived requester
 from validated claims only.
 
 ## 7. Entra user to employee mapping
 
-### Decision: server-owned, stable mapping table
+### Decision: interim active-email lookup with no SQL Server changes
 
-Attendance CRMT maps the validated `(tid, oid)` pair to an employee record.
-Email and username must not be used as the durable authorization key because
-they can change.
+Attendance CRMT must not create, alter, or populate any SQL Server table for the
+initial Teams integration. Instead, after it validates the token, it normalizes
+the token's `preferred_username` by trimming surrounding whitespace and using a
+case-insensitive comparison against `dbo.izvajalci.email`.
 
-The mapping belongs to Attendance CRMT and is maintained by an authorized
-administrator. The Teams bot has no mapping endpoint and does not receive the
-mapping table.
+The lookup succeeds only when exactly one row satisfies all of these conditions:
 
-The intended relation is:
+- `active = 1`;
+- `email` is nonblank; and
+- normalized `email` equals normalized `preferred_username`.
 
-```text
-Entra tenant ID + Entra object ID
-              ↓
-Attendance CRMT identity mapping
-              ↓
-dbo.izvajalci.izvajalec_id
-```
+The existing production schema supports this read-only lookup: `izvajalci` has
+the canonical `izvajalec_id` primary key, an `email varchar(50)` column, and an
+`active` flag. The legacy `UserId` foreign key to `dbo.aspnet_Users` is not an
+Entra identifier and is not part of this integration.
 
-Before implementation, obtain the actual SQL Server DDL and create an approved,
-application-owned mapping table with:
+The server derives `employee_id` from the unique matching employee. It must not
+accept an employee ID, email address, role, or identity claim from the bot, LLM,
+or MCP tool arguments.
 
-- a surrogate mapping ID;
-- `entra_tenant_id` and `entra_object_id` as a unique composite key;
-- a foreign key to `dbo.izvajalci.izvajalec_id`;
-- active/revoked state;
-- creation, modification, and administrator audit metadata; and
-- constraints/indexes matching the established production SQL Server schema.
+Email matching is an interim operational policy, not a durable identity model.
+It is intentionally conservative:
 
-Do not add this table or infer its exact DDL until the production-schema review
-is complete.
+- no match returns `IDENTITY_UNMAPPED`;
+- more than one active employee with the same normalized email returns
+  `IDENTITY_AMBIGUOUS`;
+- inactive employees are never matched; and
+- the server must not fall back to `username`, `domain_username`, the legacy
+  ASP.NET `UserId`, or fuzzy matching.
 
-If no active mapping exists, the server returns `IDENTITY_UNMAPPED`. It must not
-fall back to email/username matching, create an employee, or reveal whether a
-similar employee exists.
+The current development database has 62 active employees with a usable email
+address and three duplicate normalized active email addresses. Those duplicate
+addresses cannot authenticate until an administrator resolves them in the
+established employee data; the bot must never choose among them. Before any
+production deployment, run the same read-only uniqueness check against the
+production database and treat its result as the authoritative readiness gate.
 
 ## 8. Requester roles and tool authorization
 
@@ -238,7 +243,8 @@ invent security details.
 | --- | --- | --- | --- |
 | Missing bearer token | Reject before MCP session | `AUTHENTICATION_REQUIRED` | “Please sign in to use Attendance.” |
 | Invalid, expired, wrong-tenant, wrong-audience, or app-only token | Reject before MCP session | `TOKEN_INVALID` | “Your sign-in could not be verified. Please try again.” |
-| Valid token, no active employee mapping | Reject tool access | `IDENTITY_UNMAPPED` | “Your Teams account is not linked to an attendance employee. Contact an administrator.” |
+| Valid token, no active matching employee email | Reject tool access | `IDENTITY_UNMAPPED` | “Your Teams account is not linked to an active attendance employee. Contact an administrator.” |
+| Valid token, more than one active matching employee email | Reject tool access | `IDENTITY_AMBIGUOUS` | “Your Teams account cannot be linked safely. Contact an administrator.” |
 | Authenticated caller lacks a required role | Reject tool access | `FORBIDDEN` | “You do not have permission to do that.” |
 | Attendance SQL Server or required audit storage unavailable | No partial tool result; retry-safe failure | `BACKEND_UNAVAILABLE` | “Attendance is temporarily unavailable. Please try again shortly.” |
 | Unexpected server error | No internals disclosed | `INTERNAL_ERROR` | “Attendance could not complete that request.” |
@@ -262,7 +268,7 @@ This document follows semantic versioning.
 - A major version changes authentication, authorization, existing tool schemas,
   or error semantics incompatibly.
 
-The server publishes `X-Attendance-MCP-Contract-Version: 1.0.0` on MCP HTTP
+The server publishes `X-Attendance-MCP-Contract-Version: 1.1.0` on MCP HTTP
 responses. The bot sends `X-Attendance-MCP-Contract-Version: 1` and refuses an
 incompatible major version before tool use.
 
@@ -272,11 +278,12 @@ silently change `/mcp` behavior.
 
 ## 12. Implementation sequence
 
-1. Review this contract against the actual production SQL Server DDL and update
-   the mapping-table section with approved schema details.
+1. Preserve the existing SQL Server schema. Do not add an Entra mapping table,
+   modify `izvajalci`, or modify the legacy ASP.NET membership tables.
 2. Add Attendance CRMT settings and a tested Entra JWT validation component.
-3. Implement the server-owned identity mapping repository and migration after
-   schema approval.
+3. Implement a read-only, active-email employee lookup and test the unique,
+   missing, inactive, and duplicate-email outcomes against SQL Server-compatible
+   fixtures.
 4. Replace the static MVP requester resolver for authenticated Streamable HTTP
    MCP requests while retaining explicit development-test fakes.
 5. Extend audit storage and middleware for correlation and authenticated actor
