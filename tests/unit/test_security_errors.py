@@ -1,10 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from attendance_crmt.security_errors import (
-    TOKEN_INVALID_MESSAGE,
-    SecurityErrorResponse,
-)
+from attendance_crmt.security_errors import TOKEN_INVALID_MESSAGE, SecurityErrorResponse
 
 
 def test_security_error_response_serializes_stable_code_and_safe_message() -> None:
@@ -20,6 +17,29 @@ def test_security_error_response_serializes_stable_code_and_safe_message() -> No
 
     with pytest.raises(ValidationError, match="frozen"):
         response.code = "AUTHENTICATION_REQUIRED"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        (
+            "CORRELATION_ID_INVALID",
+            "The request correlation ID is missing or invalid.",
+        ),
+        ("FORBIDDEN", "You do not have permission to do that."),
+        (
+            "BACKEND_UNAVAILABLE",
+            "Attendance is temporarily unavailable. Please try again shortly.",
+        ),
+        ("INTERNAL_ERROR", "Attendance could not complete that request."),
+    ],
+)
+def test_security_error_response_serializes_new_stable_safe_messages(
+    code: str, message: str
+) -> None:
+    response = SecurityErrorResponse(code=code, message=message)  # type: ignore[arg-type]
+
+    assert response.model_dump(mode="json") == {"code": code, "message": message}
 
 
 def test_security_error_response_rejects_arbitrary_diagnostic_message() -> None:
