@@ -21,6 +21,10 @@ from pydantic import (
 from starlette.middleware import Middleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from attendance_crmt.http_contract import (
+    ContractVersionHeaderMiddleware,
+    CorrelationIdMiddleware,
+)
 from attendance_crmt.security_errors import (
     AUTHENTICATION_REQUIRED_MESSAGE,
     TOKEN_INVALID_MESSAGE,
@@ -29,6 +33,18 @@ from attendance_crmt.security_errors import (
 from attendance_crmt.settings import EntraMcpAuthenticationSettings
 
 logger = logging.getLogger(__name__)
+
+
+def build_attendance_mcp_middleware(
+    authentication_middleware: list[Middleware],
+) -> list[Middleware]:
+    """Wrap bearer authentication with Attendance's HTTP contract behavior."""
+    return [
+        Middleware(ContractVersionHeaderMiddleware),
+        Middleware(AuthenticationErrorContractMiddleware),
+        *authentication_middleware,
+        Middleware(CorrelationIdMiddleware),
+    ]
 
 
 class OpenIdConfiguration(BaseModel):
@@ -141,10 +157,7 @@ class EntraTokenVerifier(TokenVerifier):
         self._metadata_lock = asyncio.Lock()
 
     def get_middleware(self) -> list[Middleware]:
-        return [
-            Middleware(AuthenticationErrorContractMiddleware),
-            *super().get_middleware(),
-        ]
+        return build_attendance_mcp_middleware(super().get_middleware())
 
     async def verify_token(self, token: str) -> AccessToken | None:
         try:
