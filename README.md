@@ -59,14 +59,50 @@ Docker Compose passes the ignored local `.env` file into the container at
 runtime; it is not copied into the image. Create `.env` before running
 `docker compose up --build`.
 
+## Entra delegated-user authentication
+
+The `/mcp` endpoint is a protected, delegated-user boundary. Production starts
+with Entra OpenID metadata/JWKS token verification and derives the requester
+from signed claims; it does not use a configured administrator fallback.
+
+Set these values in the platform secret/configuration manager (or in the local
+ignored `.env` copied from `.env.example`):
+
+| Variable | Purpose |
+| --- | --- |
+| `ATTENDANCE_MCP_BASE_URL` | Public MCP base URL. Must use HTTPS in production. |
+| `ATTENDANCE_ENTRA_TENANT_ID` | Single accepted Entra tenant UUID. |
+| `ATTENDANCE_ENTRA_ISSUER` | Expected issuer URL. |
+| `ATTENDANCE_ENTRA_OPENID_CONFIGURATION_URL` | OpenID metadata URL on the same authority as the issuer. |
+| `ATTENDANCE_ENTRA_AUDIENCE` | Exact Attendance CRMT API audience. |
+| `ATTENDANCE_ENTRA_ALLOWED_CLIENT_IDS` | Non-empty JSON array of approved Teams bot client UUIDs. |
+| `ATTENDANCE_ENTRA_REQUIRED_SCOPE` | Delegated scope; defaults to `attendance.access`. |
+| `ATTENDANCE_ENTRA_CLOCK_SKEW_SECONDS` | Temporal-claim leeway from 0 to 300; defaults to 60. |
+| `ATTENDANCE_ENTRA_ADMIN_ROLE` | Exact Entra app role that grants `admin`; defaults to `attendance.admin`. |
+
+The server accepts only RS256-signed delegated tokens discovered through the
+configured tenant metadata. It requires the configured tenant, issuer, exact
+audience, approved client, delegated scope, temporal claims, `oid`, and a
+nonblank `preferred_username`; app-only tokens are rejected. Missing credentials
+return `AUTHENTICATION_REQUIRED`; supplied credentials that fail validation return
+`TOKEN_INVALID`. Responses use stable safe messages and never include token,
+claim, signature, or metadata diagnostics.
+
+After validation, the server trims and case-insensitively maps
+`preferred_username` to exactly one active `dbo.izvajalci.email` row. That user
+receives `employee`; only the exact configured Entra app role adds `admin`.
+Unmapped and duplicate mappings return `IDENTITY_UNMAPPED` and
+`IDENTITY_AMBIGUOUS` respectively. Tests use explicitly injected static fake
+requesters; production does not.
+
 ## Audit and structured logging
 
 Every successful or failed MCP tool interaction that reaches a registered tool
 is recorded in a local SQLite audit database. Audit persistence uses a separate
 SQLAlchemy metadata base, engine, and session factory, so it cannot interfere
 with the production SQL Server attendance mappings. Audit records use the
-server-derived MVP requester identity; future MCP or REST authentication can
-replace that resolver without changing feature services.
+server-derived requester identity; production derives it from a validated
+delegated token, while isolated tests inject an explicit fake.
 
 `ATTENDANCE_AUDIT_DATABASE_PATH` selects the database path and defaults to
 `data/audit.sqlite3`. The local `data/` directory is ignored by Git. Docker
@@ -117,7 +153,7 @@ uv run ruff format --check .
 │       ├── audit_middleware.py # Cross-cutting MCP tool auditing
 │       ├── catalog/          # Reusable catalog contracts, services, and MCP tools
 │       ├── dependencies.py # Production and test infrastructure composition
-│       ├── identity.py     # Requester identity and MVP resolver
+│       ├── identity.py     # Claim-derived requester identity and test fakes
 │       ├── server.py       # Server composition and `mcp` entry point
 ├── tests/
 │   ├── unit/               # Isolated model and settings tests
