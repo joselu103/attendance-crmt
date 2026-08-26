@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
+from uuid import UUID
 
+from fastmcp.exceptions import ToolError
+from fastmcp.server.auth import AccessToken
+from fastmcp.server.dependencies import get_access_token
 from sqlalchemy import func, select
 from sqlalchemy.exc import MultipleResultsFound, NoResultFound
 from sqlalchemy.orm import Session, sessionmaker
 
 from attendance_crmt.models import Employee
+from attendance_crmt.security_errors import (
+    IDENTITY_AMBIGUOUS_MESSAGE,
+    IDENTITY_UNMAPPED_MESSAGE,
+    TOKEN_INVALID_MESSAGE,
+    SecurityErrorCode,
+    SecurityErrorResponse,
+)
 
 
 @dataclass(frozen=True)
@@ -77,3 +89,74 @@ def resolve_active_employee_id_for_email(
             raise EmailIdentityUnmappedError from error
         except MultipleResultsFound as error:
             raise EmailIdentityAmbiguousError from error
+
+
+@dataclass(frozen=True)
+class AuthenticatedTokenRequesterResolver:
+    """Derive one requester exclusively from FastMCP's validated access token."""
+
+    session_factory: sessionmaker[Session]
+    admin_role: str
+    access_token_provider: Callable[[], AccessToken | None] = get_access_token
+
+    def resolve(self, context: Any) -> Requester:
+        """Map validated delegated-user claims to one active employee."""
+        access_token = self.access_token_provider()
+        if access_token is None:
+            raise self._token_invalid_error()
+
+        claims = access_token.claims
+        try:
+            tenant_id = UUID(str(claims["tid"]))
+            object_id = UUID(str(claims["oid"]))
+            raw_email = claims["preferred_username"]
+        except KeyError, TypeError, ValueError:
+            raise self._token_invalid_error() from None
+        if not isinstance(raw_email, str):
+            raise self._token_invalid_error()
+        email = raw_email.strip().lower()
+        if not email:
+            raise self._token_invalid_error()
+
+        try:
+            employee_id = resolve_active_employee_id_for_email(
+                session_factory=self.session_factory,
+                email=email,
+            )
+        except EmailIdentityUnmappedError:
+            raise self._identity_error(
+                code="IDENTITY_UNMAPPED",
+                message=IDENTITY_UNMAPPED_MESSAGE,
+            ) from None
+        except EmailIdentityAmbiguousError:
+            raise self._identity_error(
+                code="IDENTITY_AMBIGUOUS",
+                message=IDENTITY_AMBIGUOUS_MESSAGE,
+            ) from None
+
+        roles = {"employee"}
+        if self._has_admin_role(claims.get("roles")):
+            roles.add("admin")
+        return Requester(
+            actor_id=f"{tenant_id}:{object_id}",
+            roles=frozenset(roles),
+            employee_id=employee_id,
+        )
+
+    def _has_admin_role(self, raw_roles: Any) -> bool:
+        if not isinstance(raw_roles, (list, tuple, set, frozenset)):
+            return False
+        return any(role == self.admin_role for role in raw_roles)
+
+    @staticmethod
+    def _identity_error(*, code: SecurityErrorCode, message: str) -> ToolError:
+        response = SecurityErrorResponse(code=code, message=message)
+        return ToolError(response.model_dump_json())
+
+    @staticmethod
+    def _token_invalid_error() -> ToolError:
+        response = SecurityErrorResponse(
+            code="TOKEN_INVALID",
+            message=TOKEN_INVALID_MESSAGE,
+        )
+        return ToolError(response.model_dump_json())
