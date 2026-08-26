@@ -8,7 +8,12 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy.exc import OperationalError
 
 from attendance_crmt.audit_middleware import AuditMiddleware
-from attendance_crmt.identity import Requester, StaticRequesterResolver
+from attendance_crmt.identity import (
+    AuthenticatedIdentityResolutionError,
+    Requester,
+    StaticRequesterResolver,
+)
+from attendance_crmt.security_errors import IDENTITY_UNMAPPED_MESSAGE
 
 
 class CapturingAuditLog:
@@ -58,6 +63,37 @@ def test_audit_middleware_records_authenticated_request_context() -> None:
         "outcome": "success",
         "error_code": None,
     }
+
+
+class FailingIdentityResolver:
+    def resolve(self, context: Any) -> Requester:
+        raise AuthenticatedIdentityResolutionError(
+            code="IDENTITY_UNMAPPED",
+            message=IDENTITY_UNMAPPED_MESSAGE,
+            actor_id="22222222-2222-2222-2222-222222222222:33333333-3333-3333-3333-333333333333",
+        )
+
+
+def test_audit_middleware_records_partial_identity_context() -> None:
+    audit_log = CapturingAuditLog()
+    middleware = AuditMiddleware(
+        audit_log=audit_log,  # type: ignore[arg-type]
+        requester_resolver=FailingIdentityResolver(),  # type: ignore[arg-type]
+        correlation_id_provider=lambda: UUID("11111111-1111-1111-1111-111111111111"),
+    )
+    context = SimpleNamespace(message=SimpleNamespace(name="future_tool", arguments={}))
+
+    with pytest.raises(ToolError, match='"IDENTITY_UNMAPPED"'):
+        asyncio.run(
+            middleware.on_call_tool(context, lambda _context: _successful_tool_result())
+        )
+
+    assert audit_log.records[0]["actor_id"] == (
+        "22222222-2222-2222-2222-222222222222:33333333-3333-3333-3333-333333333333"
+    )
+    assert audit_log.records[0]["employee_id"] is None
+    assert audit_log.records[0]["roles"] == frozenset()
+    assert audit_log.records[0]["error_code"] == "IDENTITY_UNMAPPED"
 
 
 async def _successful_tool_result() -> SimpleNamespace:

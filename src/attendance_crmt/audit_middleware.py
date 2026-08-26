@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable, Mapping
 from time import perf_counter
 from typing import Any
@@ -14,7 +15,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from attendance_crmt.audit import AuditLog
 from attendance_crmt.http_contract import get_current_correlation_id
-from attendance_crmt.identity import Requester, RequesterResolver
+from attendance_crmt.identity import (
+    AuthenticatedIdentityResolutionError,
+    Requester,
+    RequesterResolver,
+)
 from attendance_crmt.observability import get_logger
 from attendance_crmt.security_errors import (
     BACKEND_UNAVAILABLE_MESSAGE,
@@ -60,11 +65,27 @@ class AuditMiddleware(Middleware):
         started_at = perf_counter()
         tool_name = context.message.name
         request = context.message.arguments or {}
-        requester = self._requester_resolver.resolve(context)
         try:
             correlation_id = self._correlation_id_provider()
         except RuntimeError:
             correlation_id = uuid4()
+        try:
+            requester = self._requester_resolver.resolve(context)
+        except AuthenticatedIdentityResolutionError as error:
+            await self._record_or_raise(
+                tool_name=tool_name,
+                requester=Requester(
+                    actor_id=error.actor_id,
+                    employee_id=None,
+                    roles=frozenset(),
+                ),
+                correlation_id=correlation_id,
+                request=request,
+                outcome="failure",
+                error_code=json.loads(str(error))["code"],
+                started_at=started_at,
+            )
+            raise
 
         try:
             result = await call_next(context)
