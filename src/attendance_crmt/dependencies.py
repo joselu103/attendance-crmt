@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -16,8 +16,8 @@ from attendance_crmt.database import (
     create_session_factory,
 )
 from attendance_crmt.identity import (
+    AuthenticatedTokenRequesterResolver,
     RequesterResolver,
-    create_mvp_requester_resolver,
 )
 from attendance_crmt.settings import Settings
 
@@ -28,9 +28,7 @@ class ServerDependencies:
 
     attendance_session_factory: sessionmaker[Session]
     audit_log: AuditLog
-    requester_resolver: RequesterResolver = field(
-        default_factory=create_mvp_requester_resolver
-    )
+    requester_resolver: RequesterResolver
 
 
 def create_production_dependencies(settings: Settings) -> ServerDependencies:
@@ -44,5 +42,8 @@ def create_production_dependencies(settings: Settings) -> ServerDependencies:
     return ServerDependencies(
         attendance_session_factory=attendance_session_factory,
         audit_log=AuditLog(audit_session_factory),
-        requester_resolver=create_mvp_requester_resolver(settings.mvp_employee_id),
+        requester_resolver=AuthenticatedTokenRequesterResolver(
+            session_factory=attendance_session_factory,
+            admin_role=settings.entra_admin_role,
+        ),
     )

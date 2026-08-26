@@ -18,6 +18,7 @@ from attendance_crmt.audit import (
 )
 from attendance_crmt.database import create_session_factory
 from attendance_crmt.dependencies import ServerDependencies
+from attendance_crmt.identity import Requester, StaticRequesterResolver
 from attendance_crmt.models import (
     AttendanceLog,
     Employee,
@@ -98,14 +99,24 @@ def audit_log(audit_session_factory: sessionmaker[Session]) -> AuditLog:
 
 
 @pytest.fixture
+def fake_requester_resolver() -> StaticRequesterResolver:
+    """Provide an explicit administrative identity for isolated test servers."""
+    return StaticRequesterResolver(
+        Requester(actor_id="test-admin", roles=frozenset({"admin"}))
+    )
+
+
+@pytest.fixture
 def server_dependencies(
     employee_session_factory: sessionmaker[Session],
     audit_log: AuditLog,
+    fake_requester_resolver: StaticRequesterResolver,
 ) -> ServerDependencies:
     """Provide all infrastructure required by an isolated MCP server."""
     return ServerDependencies(
         attendance_session_factory=employee_session_factory,
         audit_log=audit_log,
+        requester_resolver=fake_requester_resolver,
     )
 
 

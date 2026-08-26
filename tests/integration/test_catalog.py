@@ -20,6 +20,7 @@ def test_list_employees_returns_a_bounded_page_of_active_employees(
     employee_session_factory,
     employee_factory,
     audit_log,
+    fake_requester_resolver,
 ) -> None:
     active_employees = employee_factory.build_batch(2)
     inactive_employee = employee_factory.build(active=0)
@@ -32,6 +33,7 @@ def test_list_employees_returns_a_bounded_page_of_active_employees(
         ServerDependencies(
             attendance_session_factory=employee_session_factory,
             audit_log=audit_log,
+            requester_resolver=fake_requester_resolver,
         )
     )
     result = asyncio.run(server.call_tool("list_employees", {"limit": 1, "offset": 0}))
@@ -62,11 +64,13 @@ def test_audit_middleware_records_a_successful_mcp_tool_interaction(
     employee_session_factory,
     audit_log,
     audit_session_factory,
+    fake_requester_resolver,
 ) -> None:
     server = create_server(
         ServerDependencies(
             attendance_session_factory=employee_session_factory,
             audit_log=audit_log,
+            requester_resolver=fake_requester_resolver,
         )
     )
 
@@ -86,11 +90,13 @@ def test_audit_middleware_records_a_failed_mcp_tool_interaction(
     employee_session_factory,
     audit_log,
     audit_session_factory,
+    fake_requester_resolver,
 ) -> None:
     server = create_server(
         ServerDependencies(
             attendance_session_factory=employee_session_factory,
             audit_log=audit_log,
+            requester_resolver=fake_requester_resolver,
         )
     )
 

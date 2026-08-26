@@ -18,7 +18,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ATTENDANCE_DB_URL_ENV = "ATTENDANCE_DATABASE_URL"
 AUDIT_DB_PATH_ENV = "ATTENDANCE_AUDIT_DATABASE_PATH"
-MVP_EMPLOYEE_ID_ENV = "ATTENDANCE_MVP_EMPLOYEE_ID"
 MCP_BASE_URL_ENV = "ATTENDANCE_MCP_BASE_URL"
 ENTRA_TENANT_ID_ENV = "ATTENDANCE_ENTRA_TENANT_ID"
 ENTRA_ISSUER_ENV = "ATTENDANCE_ENTRA_ISSUER"
@@ -65,10 +64,6 @@ class Settings(BaseSettings):
     audit_db_path: Path = Field(
         default=Path("data/audit.sqlite3"),
         validation_alias=AUDIT_DB_PATH_ENV,
-    )
-    mvp_employee_id: int | None = Field(
-        default=None,
-        validation_alias=MVP_EMPLOYEE_ID_ENV,
     )
     mcp_base_url: AnyHttpUrl = Field(validation_alias=MCP_BASE_URL_ENV)
     entra_tenant_id: UUID = Field(validation_alias=ENTRA_TENANT_ID_ENV)

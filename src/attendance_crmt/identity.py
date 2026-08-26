@@ -60,19 +60,6 @@ class StaticRequesterResolver:
         return self.requester
 
 
-def create_mvp_requester_resolver(
-    employee_id: int | None = None,
-) -> StaticRequesterResolver:
-    """Create the fixed read-only MVP administrator requester."""
-    return StaticRequesterResolver(
-        Requester(
-            actor_id="mvp-admin",
-            roles=frozenset({"admin"}),
-            employee_id=employee_id,
-        )
-    )
-
-
 def resolve_active_employee_id_for_email(
     *, session_factory: sessionmaker[Session], email: str
 ) -> int:
