@@ -212,8 +212,8 @@ class EntraTokenVerifier(TokenVerifier):
         ):
             logger.info("Entra access token validation rejected")
             return None
-        except Exception:
-            logger.exception("Entra token validation infrastructure failed")
+        except Exception:  # noqa: BLE001
+            logger.error("Entra token validation infrastructure failed")
             return None
 
     async def _get_jwk_client(self) -> PyJWKClient:

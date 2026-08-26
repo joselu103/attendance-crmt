@@ -89,8 +89,8 @@ class AuditMiddleware(Middleware):
 
         try:
             result = await call_next(context)
-        except Exception as error:
-            logger.exception(
+        except Exception as error:  # noqa: BLE001
+            logger.error(
                 "mcp_tool_interaction",
                 tool_name=tool_name,
                 outcome="failure",
@@ -146,8 +146,8 @@ class AuditMiddleware(Middleware):
                 error_code,
                 started_at,
             )
-        except Exception:
-            logger.exception(
+        except Exception:  # noqa: BLE001
+            logger.error(
                 "mcp_audit_persistence_failed",
                 tool_name=tool_name,
                 outcome=outcome,
