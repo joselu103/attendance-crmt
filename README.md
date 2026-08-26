@@ -105,7 +105,19 @@ server-derived requester identity; production derives it from a validated
 delegated token, while isolated tests inject an explicit fake.
 
 `ATTENDANCE_AUDIT_DATABASE_PATH` selects the database path and defaults to
-`data/audit.sqlite3`. The local `data/` directory is ignored by Git. Docker
+`data/audit.sqlite3`. Startup performs an additive SQLite migration: historic
+rows are retained and the nullable `employee_id`, `roles_json`,
+`correlation_id`, and `error_code` columns remain null where history has no
+truthful value. Back up the persistent audit volume before cleanup or recovery
+operations.
+
+Authenticated HTTP MCP clients must send exactly one UUID
+`X-Correlation-ID` on every request. The server normalizes it, records it with
+new audit rows, and publishes contract version `1.1.0` in
+`X-Attendance-MCP-Contract-Version`. Direct in-memory tests explicitly inject a
+fixed correlation resolver.
+
+Docker
 Compose mounts `/app/data` as the persistent `attendance-audit` volume, so the
 audit history survives a container replacement. Back up that volume before
 performing destructive Docker cleanup.

@@ -249,15 +249,19 @@ invent security details.
 | Attendance SQL Server or required audit storage unavailable | No partial tool result; retry-safe failure | `BACKEND_UNAVAILABLE` | “Attendance is temporarily unavailable. Please try again shortly.” |
 | Unexpected server error | No internals disclosed | `INTERNAL_ERROR` | “Attendance could not complete that request.” |
 
-Authentication failures use HTTP `401`; authorization and mapping failures use
-HTTP `403`; unavailable dependencies use HTTP `503`. The server must avoid
-returning stack traces, database details, token claims, employee IDs, or
-identity-search hints to the client.
+For authenticated `/mcp` HTTP requests, the bot sends exactly one
+UUID-valued `X-Correlation-ID` header on initialization, tool, and
+session-management requests. Attendance CRMT normalizes valid UUIDs to their
+canonical lowercase form. Missing, malformed, or duplicate values return HTTP
+`400` with `CORRELATION_ID_INVALID` only after bearer authentication succeeds;
+missing or invalid bearer authentication retains HTTP `401` precedence.
 
-For tool-level errors after a valid MCP session is established, the server
-returns the stable code in the MCP error payload as well as logging it with the
-correlation ID. The exact FastMCP serialization is covered by compatibility
-tests; the code and safe semantic behavior are the stable contract.
+The server publishes `X-Attendance-MCP-Contract-Version: 1.1.0` on MCP HTTP
+responses. After an MCP session is established, authorization, mapping, and
+availability failures are MCP tool errors (`isError=true`) containing the stable
+code and safe message—not transport-level HTTP `403` or `503` rewrites. No
+public error or general structured log includes tokens, claims, emails,
+identities, request values, SQL details, or stack traces.
 
 ## 11. Contract versioning
 
