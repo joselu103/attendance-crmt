@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
@@ -7,12 +8,14 @@ import pytest
 from fastmcp.exceptions import ToolError
 from sqlalchemy.exc import OperationalError
 
+from attendance_crmt import audit_middleware
 from attendance_crmt.audit_middleware import AuditMiddleware
 from attendance_crmt.identity import (
     AuthenticatedIdentityResolutionError,
     Requester,
     StaticRequesterResolver,
 )
+from attendance_crmt.observability import configure_structlog, get_logger
 from attendance_crmt.security_errors import IDENTITY_UNMAPPED_MESSAGE
 
 
@@ -175,6 +178,10 @@ async def _unexpected_tool_result() -> SimpleNamespace:
     raise RuntimeError("database password leaked")
 
 
+async def _tool_result_with_sensitive_diagnostic() -> SimpleNamespace:
+    raise RuntimeError("sensitive diagnostic sentinel")
+
+
 def test_audit_middleware_replaces_unexpected_failures_with_safe_error_code() -> None:
     audit_log = CapturingAuditLog()
     middleware = AuditMiddleware(
@@ -193,3 +200,63 @@ def test_audit_middleware_replaces_unexpected_failures_with_safe_error_code() ->
 
     assert audit_log.records[0]["outcome"] == "failure"
     assert audit_log.records[0]["error_code"] == "INTERNAL_ERROR"
+
+
+def test_unexpected_tool_failure_log_omits_exception_details(
+    capsys, monkeypatch
+) -> None:
+    configure_structlog()
+    monkeypatch.setattr(audit_middleware, "logger", get_logger("audit-log-test"))
+    middleware = AuditMiddleware(
+        audit_log=CapturingAuditLog(),  # type: ignore[arg-type]
+        requester_resolver=StaticRequesterResolver(
+            Requester(actor_id="actor", employee_id=42, roles=frozenset({"employee"}))
+        ),
+        correlation_id_provider=lambda: UUID("11111111-1111-1111-1111-111111111111"),
+    )
+    context = SimpleNamespace(message=SimpleNamespace(name="future_tool", arguments={}))
+
+    with pytest.raises(ToolError, match='"INTERNAL_ERROR"'):
+        asyncio.run(
+            middleware.on_call_tool(
+                context, lambda _context: _tool_result_with_sensitive_diagnostic()
+            )
+        )
+
+    event = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert event["event"] == "mcp_tool_interaction"
+    assert event["tool_name"] == "future_tool"
+    assert event["outcome"] == "failure"
+    assert "exception" not in event
+    assert "traceback" not in event
+    assert "sensitive diagnostic sentinel" not in json.dumps(event)
+
+
+def test_audit_persistence_failure_log_omits_exception_details(
+    capsys, monkeypatch
+) -> None:
+    configure_structlog()
+    monkeypatch.setattr(audit_middleware, "logger", get_logger("audit-log-test"))
+    middleware = AuditMiddleware(
+        audit_log=FailingAuditLog(),  # type: ignore[arg-type]
+        requester_resolver=StaticRequesterResolver(
+            Requester(actor_id="actor", employee_id=42, roles=frozenset({"employee"}))
+        ),
+        correlation_id_provider=lambda: UUID("11111111-1111-1111-1111-111111111111"),
+    )
+    context = SimpleNamespace(message=SimpleNamespace(name="future_tool", arguments={}))
+
+    with pytest.raises(ToolError, match='"BACKEND_UNAVAILABLE"'):
+        asyncio.run(
+            middleware.on_call_tool(context, lambda _context: _successful_tool_result())
+        )
+
+    event = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert event["event"] == "mcp_audit_persistence_failed"
+    assert event["tool_name"] == "future_tool"
+    assert event["outcome"] == "success"
+    assert event["level"] == "error"
+    assert "timestamp" in event
+    assert "exception" not in event
+    assert "traceback" not in event
+    assert "audit database unavailable" not in json.dumps(event)

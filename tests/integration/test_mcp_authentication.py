@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -47,6 +48,11 @@ class StaticOpenIdConfigurationLoader:
 
     async def load(self, url: str) -> OpenIdConfiguration:
         return self._configuration
+
+
+class FailingOpenIdConfigurationLoader:
+    async def load(self, url: str) -> OpenIdConfiguration:
+        raise RuntimeError("sensitive diagnostic sentinel")
 
 
 class StaticJwksClient(PyJWKClient):
@@ -240,6 +246,22 @@ def test_jwks_timeout_fails_closed() -> None:
     verifier = _verifier(settings, unavailable_jwks)
 
     assert asyncio.run(verifier.verify_token(token)) is None
+
+
+def test_token_infrastructure_failure_log_omits_exception_details(caplog) -> None:
+    settings = _authentication_settings()
+    verifier = EntraTokenVerifier(
+        settings,
+        metadata_loader=FailingOpenIdConfigurationLoader(),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="attendance_crmt.authentication"):
+        assert asyncio.run(verifier.verify_token("token")) is None
+
+    record = caplog.records[-1]
+    assert record.getMessage() == "Entra token validation infrastructure failed"
+    assert record.exc_info is None
+    assert "sensitive diagnostic sentinel" not in caplog.text
 
 
 @pytest.mark.parametrize(
