@@ -15,6 +15,7 @@ dependencies = [
     "pyodbc>=5.2",
     "sqlalchemy>=2.0",
     "structlog>=26.1.0",
+    "uvicorn>=0.41",
 ]
 
 [project.scripts]

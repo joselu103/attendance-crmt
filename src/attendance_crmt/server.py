@@ -1,6 +1,7 @@
 """FastMCP server composition."""
 
 from fastmcp import FastMCP
+from starlette.types import ASGIApp
 
 from attendance_crmt.attendance.tools import register_attendance_tools
 from attendance_crmt.audit_middleware import AuditMiddleware
@@ -9,6 +10,7 @@ from attendance_crmt.dependencies import (
     ServerDependencies,
     create_production_dependencies,
 )
+from attendance_crmt.http_contract import ContractVersionHeaderMiddleware
 from attendance_crmt.observability import configure_structlog
 from attendance_crmt.settings import Settings, get_settings
 
@@ -48,4 +50,17 @@ def create_production_server(settings: Settings | None = None) -> FastMCP:
     return create_server(dependencies, settings=settings)
 
 
+def create_http_app(server: FastMCP) -> ASGIApp:
+    """Wrap FastMCP's protected HTTP app with Attendance response headers."""
+    return ContractVersionHeaderMiddleware(
+        server.http_app(
+            path="/mcp",
+            stateless_http=True,
+            json_response=True,
+            host_origin_protection=True,
+        )
+    )
+
+
 mcp = create_production_server()
+app = create_http_app(mcp)

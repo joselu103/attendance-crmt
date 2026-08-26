@@ -20,6 +20,7 @@ from attendance_crmt.security_errors import (
     CORRELATION_ID_INVALID_MESSAGE,
     TOKEN_INVALID_MESSAGE,
 )
+from attendance_crmt.server import create_http_app
 
 
 class StaticTokenVerifier(TokenVerifier):
@@ -56,8 +57,9 @@ def _post_mcp(
     body: dict[str, Any] | None = None,
 ) -> httpx.Response:
     async def request() -> httpx.Response:
+        inner_app = getattr(app, "_app", app)
         async with (
-            app.router.lifespan_context(app),
+            inner_app.router.lifespan_context(inner_app),
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://test",
@@ -101,6 +103,16 @@ def test_invalid_bearer_keeps_token_invalid_precedence() -> None:
         "code": "TOKEN_INVALID",
         "message": TOKEN_INVALID_MESSAGE,
     }
+    _assert_contract_version(response)
+
+
+def test_host_origin_rejection_includes_contract_version() -> None:
+    server = FastMCP("host-origin-test")
+    app = create_http_app(server)
+
+    response = _post_mcp(app, headers=[("Host", "evil.example")])
+
+    assert response.status_code == 421
     _assert_contract_version(response)
 
 
