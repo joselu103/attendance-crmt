@@ -117,6 +117,7 @@ def server_dependencies(
         attendance_session_factory=employee_session_factory,
         audit_log=audit_log,
         requester_resolver=fake_requester_resolver,
+        auth_provider=None,
     )
 
 

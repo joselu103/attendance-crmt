@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from fastmcp.server.auth import TokenVerifier
 from sqlalchemy.orm import Session, sessionmaker
 
 from attendance_crmt.audit import (
@@ -11,6 +12,7 @@ from attendance_crmt.audit import (
     create_audit_engine,
     create_audit_session_factory,
 )
+from attendance_crmt.authentication import EntraTokenVerifier
 from attendance_crmt.database import (
     create_engine_for_url,
     create_session_factory,
@@ -29,6 +31,7 @@ class ServerDependencies:
     attendance_session_factory: sessionmaker[Session]
     audit_log: AuditLog
     requester_resolver: RequesterResolver
+    auth_provider: TokenVerifier | None
 
 
 def create_production_dependencies(settings: Settings) -> ServerDependencies:
@@ -46,4 +49,5 @@ def create_production_dependencies(settings: Settings) -> ServerDependencies:
             session_factory=attendance_session_factory,
             admin_role=settings.entra_admin_role,
         ),
+        auth_provider=EntraTokenVerifier(settings.entra_mcp_authentication),
     )

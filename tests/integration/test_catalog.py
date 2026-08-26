@@ -34,6 +34,7 @@ def test_list_employees_returns_a_bounded_page_of_active_employees(
             attendance_session_factory=employee_session_factory,
             audit_log=audit_log,
             requester_resolver=fake_requester_resolver,
+            auth_provider=None,
         )
     )
     result = asyncio.run(server.call_tool("list_employees", {"limit": 1, "offset": 0}))
@@ -71,6 +72,7 @@ def test_audit_middleware_records_a_successful_mcp_tool_interaction(
             attendance_session_factory=employee_session_factory,
             audit_log=audit_log,
             requester_resolver=fake_requester_resolver,
+            auth_provider=None,
         )
     )
 
@@ -97,6 +99,7 @@ def test_audit_middleware_records_a_failed_mcp_tool_interaction(
             attendance_session_factory=employee_session_factory,
             audit_log=audit_log,
             requester_resolver=fake_requester_resolver,
+            auth_provider=None,
         )
     )
 
@@ -156,6 +159,7 @@ def test_admin_can_list_an_employees_attendance_events(
             requester_resolver=StaticRequesterResolver(
                 Requester(actor_id="mvp-admin", roles=frozenset({"admin"}))
             ),
+            auth_provider=None,
         )
     )
 
@@ -205,6 +209,7 @@ def test_non_admin_cannot_list_an_employees_attendance_events(
             requester_resolver=StaticRequesterResolver(
                 Requester(actor_id="mvp-employee", roles=frozenset())
             ),
+            auth_provider=None,
         )
     )
 
