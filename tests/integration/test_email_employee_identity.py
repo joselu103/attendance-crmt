@@ -6,6 +6,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 
 from attendance_crmt.identity import (
+    AuthenticatedIdentityResolutionError,
     AuthenticatedTokenRequesterResolver,
     EmailIdentityAmbiguousError,
     EmailIdentityUnmappedError,
@@ -159,9 +160,12 @@ def test_authenticated_requester_returns_identity_unmapped(
         access_token=_access_token(),
     )
 
-    with pytest.raises(ToolError) as error:
+    with pytest.raises(AuthenticatedIdentityResolutionError) as error:
         resolver.resolve(context=None)
 
+    assert error.value.actor_id == (
+        "11111111-1111-1111-1111-111111111111:33333333-3333-3333-3333-333333333333"
+    )
     assert json.loads(str(error.value)) == {
         "code": "IDENTITY_UNMAPPED",
         "message": IDENTITY_UNMAPPED_MESSAGE,

@@ -78,6 +78,15 @@ def resolve_active_employee_id_for_email(
             raise EmailIdentityAmbiguousError from error
 
 
+class AuthenticatedIdentityResolutionError(ToolError):
+    """Safe identity failure retaining only the already-validated actor ID."""
+
+    def __init__(self, *, code: SecurityErrorCode, message: str, actor_id: str) -> None:
+        response = SecurityErrorResponse(code=code, message=message)
+        super().__init__(response.model_dump_json())
+        self.actor_id = actor_id
+
+
 @dataclass(frozen=True)
 class AuthenticatedTokenRequesterResolver:
     """Derive one requester exclusively from FastMCP's validated access token."""
@@ -114,11 +123,13 @@ class AuthenticatedTokenRequesterResolver:
             raise self._identity_error(
                 code="IDENTITY_UNMAPPED",
                 message=IDENTITY_UNMAPPED_MESSAGE,
+                actor_id=f"{tenant_id}:{object_id}",
             ) from None
         except EmailIdentityAmbiguousError:
             raise self._identity_error(
                 code="IDENTITY_AMBIGUOUS",
                 message=IDENTITY_AMBIGUOUS_MESSAGE,
+                actor_id=f"{tenant_id}:{object_id}",
             ) from None
 
         roles = {"employee"}
@@ -136,9 +147,14 @@ class AuthenticatedTokenRequesterResolver:
         return any(role == self.admin_role for role in raw_roles)
 
     @staticmethod
-    def _identity_error(*, code: SecurityErrorCode, message: str) -> ToolError:
-        response = SecurityErrorResponse(code=code, message=message)
-        return ToolError(response.model_dump_json())
+    def _identity_error(
+        *, code: SecurityErrorCode, message: str, actor_id: str
+    ) -> AuthenticatedIdentityResolutionError:
+        return AuthenticatedIdentityResolutionError(
+            code=code,
+            message=message,
+            actor_id=actor_id,
+        )
 
     @staticmethod
     def _token_invalid_error() -> ToolError:
