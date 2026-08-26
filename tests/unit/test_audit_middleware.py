@@ -16,7 +16,10 @@ from attendance_crmt.identity import (
     StaticRequesterResolver,
 )
 from attendance_crmt.observability import configure_structlog, get_logger
-from attendance_crmt.security_errors import IDENTITY_UNMAPPED_MESSAGE
+from attendance_crmt.security_errors import (
+    BACKEND_UNAVAILABLE_MESSAGE,
+    IDENTITY_UNMAPPED_MESSAGE,
+)
 
 
 class CapturingAuditLog:
@@ -118,6 +121,47 @@ def test_audit_middleware_records_partial_identity_context() -> None:
     assert audit_log.records[0]["employee_id"] is None
     assert audit_log.records[0]["roles"] == frozenset()
     assert audit_log.records[0]["error_code"] == "IDENTITY_UNMAPPED"
+
+
+class NonSerializableIdentityFailure(AuthenticatedIdentityResolutionError):
+    def __str__(self) -> str:
+        return "sensitive backend sentinel"
+
+
+class FailingBackendIdentityResolver:
+    def resolve(self, context: Any) -> Requester:
+        raise NonSerializableIdentityFailure(
+            code="BACKEND_UNAVAILABLE",
+            message=BACKEND_UNAVAILABLE_MESSAGE,
+            actor_id="22222222-2222-2222-2222-222222222222:***",
+        )
+
+
+def test_audit_middleware_records_backend_identity_failure_context() -> None:
+    audit_log = CapturingAuditLog()
+    middleware = AuditMiddleware(
+        audit_log=audit_log,  # type: ignore[arg-type]
+        requester_resolver=FailingBackendIdentityResolver(),  # type: ignore[arg-type]
+        correlation_id_provider=lambda: UUID("11111111-1111-1111-1111-111111111111"),
+    )
+    context = SimpleNamespace(message=SimpleNamespace(name="future_tool", arguments={}))
+
+    with pytest.raises(ToolError) as error:
+        asyncio.run(
+            middleware.on_call_tool(context, lambda _context: _successful_tool_result())
+        )
+
+    assert error.value.args[0] == (
+        '{"code":"BACKEND_UNAVAILABLE","message":"Attendance is temporarily '
+        'unavailable. Please try again shortly."}'
+    )
+    assert "sensitive backend sentinel" not in error.value.args[0]
+    record = audit_log.records[0]
+    assert record["actor_id"] == "22222222-2222-2222-2222-222222222222:***"
+    assert record["employee_id"] is None
+    assert record["roles"] == frozenset()
+    assert record["outcome"] == "failure"
+    assert record["error_code"] == "BACKEND_UNAVAILABLE"
 
 
 async def _successful_tool_result() -> SimpleNamespace:

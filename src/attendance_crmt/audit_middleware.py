@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Callable, Mapping
 from time import perf_counter
 from typing import Any
@@ -82,7 +81,7 @@ class AuditMiddleware(Middleware):
                 correlation_id=correlation_id,
                 request=request,
                 outcome="failure",
-                error_code=json.loads(str(error))["code"],
+                error_code=error.code,
                 started_at=started_at,
             )
             raise

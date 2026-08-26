@@ -11,11 +11,12 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.dependencies import get_access_token
 from sqlalchemy import func, select
-from sqlalchemy.exc import MultipleResultsFound, NoResultFound
+from sqlalchemy.exc import MultipleResultsFound, NoResultFound, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from attendance_crmt.models import Employee
 from attendance_crmt.security_errors import (
+    BACKEND_UNAVAILABLE_MESSAGE,
     IDENTITY_AMBIGUOUS_MESSAGE,
     IDENTITY_UNMAPPED_MESSAGE,
     TOKEN_INVALID_MESSAGE,
@@ -84,6 +85,7 @@ class AuthenticatedIdentityResolutionError(ToolError):
     def __init__(self, *, code: SecurityErrorCode, message: str, actor_id: str) -> None:
         response = SecurityErrorResponse(code=code, message=message)
         super().__init__(response.model_dump_json())
+        self.code = code
         self.actor_id = actor_id
 
 
@@ -113,6 +115,7 @@ class AuthenticatedTokenRequesterResolver:
         email = raw_email.strip().lower()
         if not email:
             raise self._token_invalid_error()
+        actor_id = f"{tenant_id}:{object_id}"
 
         try:
             employee_id = resolve_active_employee_id_for_email(
@@ -123,20 +126,26 @@ class AuthenticatedTokenRequesterResolver:
             raise self._identity_error(
                 code="IDENTITY_UNMAPPED",
                 message=IDENTITY_UNMAPPED_MESSAGE,
-                actor_id=f"{tenant_id}:{object_id}",
+                actor_id=actor_id,
             ) from None
         except EmailIdentityAmbiguousError:
             raise self._identity_error(
                 code="IDENTITY_AMBIGUOUS",
                 message=IDENTITY_AMBIGUOUS_MESSAGE,
-                actor_id=f"{tenant_id}:{object_id}",
+                actor_id=actor_id,
+            ) from None
+        except SQLAlchemyError:
+            raise self._identity_error(
+                code="BACKEND_UNAVAILABLE",
+                message=BACKEND_UNAVAILABLE_MESSAGE,
+                actor_id=actor_id,
             ) from None
 
         roles = {"employee"}
         if self._has_admin_role(claims.get("roles")):
             roles.add("admin")
         return Requester(
-            actor_id=f"{tenant_id}:{object_id}",
+            actor_id=actor_id,
             roles=frozenset(roles),
             employee_id=employee_id,
         )

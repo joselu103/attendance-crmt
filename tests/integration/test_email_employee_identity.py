@@ -1,9 +1,10 @@
 import json
-from typing import Any
+from typing import Any, Self
 
 import pytest
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
+from sqlalchemy.exc import OperationalError
 
 from attendance_crmt.identity import (
     AuthenticatedIdentityResolutionError,
@@ -13,6 +14,7 @@ from attendance_crmt.identity import (
     resolve_active_employee_id_for_email,
 )
 from attendance_crmt.security_errors import (
+    BACKEND_UNAVAILABLE_MESSAGE,
     IDENTITY_AMBIGUOUS_MESSAGE,
     IDENTITY_UNMAPPED_MESSAGE,
     TOKEN_INVALID_MESSAGE,
@@ -163,13 +165,47 @@ def test_authenticated_requester_returns_identity_unmapped(
     with pytest.raises(AuthenticatedIdentityResolutionError) as error:
         resolver.resolve(context=None)
 
-    assert error.value.actor_id == (
-        "11111111-1111-1111-1111-111111111111:33333333-3333-3333-3333-333333333333"
-    )
+    assert error.value.actor_id == _access_token().subject
+    assert error.value.code == "IDENTITY_UNMAPPED"
     assert json.loads(str(error.value)) == {
         "code": "IDENTITY_UNMAPPED",
         "message": IDENTITY_UNMAPPED_MESSAGE,
     }
+
+
+def test_authenticated_requester_returns_backend_unavailable_for_database_failure() -> (
+    None
+):
+    class FailingEmployeeSession:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def scalars(self, statement: object) -> None:
+            raise OperationalError(
+                "SELECT sensitive database statement",
+                {},
+                ConnectionError("sensitive backend sentinel"),
+            )
+
+    resolver = AuthenticatedTokenRequesterResolver(
+        session_factory=lambda: FailingEmployeeSession(),  # type: ignore[arg-type]
+        admin_role="attendance.admin",
+        access_token_provider=_access_token,
+    )
+
+    with pytest.raises(AuthenticatedIdentityResolutionError) as error:
+        resolver.resolve(context=None)
+
+    assert error.value.actor_id == _access_token().subject
+    assert error.value.code == "BACKEND_UNAVAILABLE"
+    assert json.loads(str(error.value)) == {
+        "code": "BACKEND_UNAVAILABLE",
+        "message": BACKEND_UNAVAILABLE_MESSAGE,
+    }
+    assert "sensitive backend sentinel" not in str(error.value)
 
 
 def test_authenticated_requester_returns_identity_ambiguous(
