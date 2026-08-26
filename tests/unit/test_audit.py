@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from attendance_crmt.audit import (
     AuditEvent,
@@ -37,3 +37,61 @@ def test_audit_log_redacts_sensitive_request_values(tmp_path) -> None:
         "nested": {"authorization": "[REDACTED]"},
         "token": "[REDACTED]",
     }
+
+
+def test_audit_schema_migration_adds_authenticated_context_columns(tmp_path) -> None:
+    engine = create_audit_engine(tmp_path / "audit.sqlite3")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE audit_event (
+                        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        occurred_at_utc DATETIME NOT NULL,
+                        actor_id VARCHAR(50) NOT NULL,
+                        tool_name VARCHAR(255) NOT NULL,
+                        request_json TEXT NOT NULL,
+                        outcome VARCHAR(20) NOT NULL,
+                        duration_ms INTEGER NOT NULL
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO audit_event (
+                        occurred_at_utc, actor_id, tool_name, request_json, outcome, duration_ms
+                    ) VALUES (
+                        '2026-08-26T00:00:00+00:00', 'historic-user', 'historic_tool',
+                        '{}', 'success', 1
+                    )
+                    """
+                )
+            )
+
+        session_factory = create_audit_session_factory(engine)
+
+        with engine.connect() as connection:
+            columns = {
+                row[1]
+                for row in connection.execute(text("PRAGMA table_info(audit_event)"))
+            }
+        with session_factory() as session:
+            historic_event = session.scalar(select(AuditEvent))
+    finally:
+        engine.dispose()
+
+    assert {
+        "correlation_id",
+        "employee_id",
+        "roles_json",
+        "error_code",
+    } <= columns
+    assert historic_event is not None
+    assert historic_event.actor_id == "historic-user"
+    assert historic_event.correlation_id is None
+    assert historic_event.employee_id is None
+    assert historic_event.roles_json is None
+    assert historic_event.error_code is None

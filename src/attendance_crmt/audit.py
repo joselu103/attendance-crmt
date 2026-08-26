@@ -30,10 +30,14 @@ class AuditEvent(AuditBase):
     occurred_at_utc: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    actor_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    employee_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    roles_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
     request_json: Mapped[str] = mapped_column(Text, nullable=False)
     outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
@@ -43,10 +47,33 @@ def create_audit_engine(database_path: Path) -> Engine:
     return create_engine(URL.create("sqlite", database=str(database_path)))
 
 
+AUDIT_ADDITIVE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("employee_id", "INTEGER"),
+    ("roles_json", "TEXT"),
+    ("correlation_id", "VARCHAR(36)"),
+    ("error_code", "VARCHAR(64)"),
+)
+
+
 def create_audit_session_factory(engine: Engine) -> sessionmaker[Session]:
-    """Create the audit schema and return its SQLAlchemy session factory."""
+    """Create or additively migrate the local SQLite audit schema."""
     AuditBase.metadata.create_all(engine)
+    _migrate_audit_schema(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+def _migrate_audit_schema(engine: Engine) -> None:
+    """Add nullable fields without rewriting established local audit records."""
+    with engine.begin() as connection:
+        existing_columns = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(audit_event)")
+        }
+        for column_name, column_type in AUDIT_ADDITIVE_COLUMNS:
+            if column_name not in existing_columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE audit_event ADD COLUMN {column_name} {column_type}"
+                )
 
 
 class AuditLog:

@@ -3,6 +3,9 @@
 import os
 
 os.environ.setdefault("ATTENDANCE_DATABASE_URL", "sqlite://")
+os.environ.setdefault(
+    "ATTENDANCE_AUDIT_DATABASE_PATH", "/tmp/attendance-crmt-tests/audit.sqlite3"
+)
 os.environ.setdefault("ATTENDANCE_MCP_BASE_URL", "http://localhost:8000")
 os.environ.setdefault(
     "ATTENDANCE_ENTRA_TENANT_ID", "11111111-1111-1111-1111-111111111111"
