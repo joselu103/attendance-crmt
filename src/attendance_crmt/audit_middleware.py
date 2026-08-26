@@ -152,9 +152,11 @@ class AuditMiddleware(Middleware):
                 tool_name=tool_name,
                 outcome=outcome,
             )
-            raise ToolError(
-                "The request could not be completed because audit recording is unavailable."
-            ) from None
+            response = SecurityErrorResponse(
+                code="BACKEND_UNAVAILABLE",
+                message=BACKEND_UNAVAILABLE_MESSAGE,
+            )
+            raise ToolError(response.model_dump_json()) from None
 
     async def _record(
         self,

@@ -65,6 +65,27 @@ def test_audit_middleware_records_authenticated_request_context() -> None:
     }
 
 
+class FailingAuditLog:
+    def record(self, **kwargs: Any) -> None:
+        raise OSError("audit database unavailable")
+
+
+def test_audit_middleware_replaces_audit_store_failures_with_safe_error_code() -> None:
+    middleware = AuditMiddleware(
+        audit_log=FailingAuditLog(),  # type: ignore[arg-type]
+        requester_resolver=StaticRequesterResolver(
+            Requester(actor_id="actor", employee_id=42, roles=frozenset({"employee"}))
+        ),
+        correlation_id_provider=lambda: UUID("11111111-1111-1111-1111-111111111111"),
+    )
+    context = SimpleNamespace(message=SimpleNamespace(name="future_tool", arguments={}))
+
+    with pytest.raises(ToolError, match='"BACKEND_UNAVAILABLE"'):
+        asyncio.run(
+            middleware.on_call_tool(context, lambda _context: _successful_tool_result())
+        )
+
+
 class FailingIdentityResolver:
     def resolve(self, context: Any) -> Requester:
         raise AuthenticatedIdentityResolutionError(
