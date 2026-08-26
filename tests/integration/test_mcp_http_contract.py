@@ -4,6 +4,8 @@ from typing import Any
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, TokenVerifier
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 from starlette.middleware import Middleware
 
 from attendance_crmt.authentication import build_attendance_mcp_middleware
@@ -174,3 +176,31 @@ def test_authenticated_request_propagates_normalized_correlation_id_to_tool() ->
         }
     ]
     _assert_contract_version(response)
+
+
+def test_official_streamable_http_client_calls_authenticated_tool() -> None:
+    app = _mcp_app()
+
+    async def call_tool() -> str:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                headers={
+                    "Authorization": "Bearer accepted-test-token",
+                    CORRELATION_ID_HEADER: "11111111-1111-1111-1111-111111111111",
+                },
+            ) as client,
+            streamable_http_client("http://test/mcp", http_client=client) as (
+                read_stream,
+                write_stream,
+                _,
+            ),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool("current_correlation_id", {})
+            return result.content[0].text
+
+    assert asyncio.run(call_tool()) == "11111111-1111-1111-1111-111111111111"
