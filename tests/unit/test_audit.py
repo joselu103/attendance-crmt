@@ -1,4 +1,5 @@
 import json
+from uuid import UUID
 
 from sqlalchemy import select, text
 
@@ -37,6 +38,43 @@ def test_audit_log_redacts_sensitive_request_values(tmp_path) -> None:
         "nested": {"authorization": "[REDACTED]"},
         "token": "[REDACTED]",
     }
+
+
+def test_audit_log_persists_authenticated_context_and_stable_error_code(
+    tmp_path,
+) -> None:
+    engine = create_audit_engine(tmp_path / "audit.sqlite3")
+    session_factory = create_audit_session_factory(engine)
+    audit_log = AuditLog(session_factory)
+    correlation_id = UUID("11111111-1111-1111-1111-111111111111")
+
+    try:
+        audit_log.record(
+            actor_id="22222222-2222-2222-2222-222222222222:33333333-3333-3333-3333-333333333333",
+            employee_id=42,
+            roles=frozenset({"admin", "employee"}),
+            correlation_id=correlation_id,
+            tool_name="future_tool",
+            request={},
+            outcome="failure",
+            error_code="FORBIDDEN",
+            duration_ms=12,
+        )
+
+        with session_factory() as session:
+            event = session.scalar(select(AuditEvent))
+    finally:
+        engine.dispose()
+
+    assert event is not None
+    assert (
+        event.actor_id
+        == "22222222-2222-2222-2222-222222222222:33333333-3333-3333-3333-333333333333"
+    )
+    assert event.employee_id == 42
+    assert event.roles_json == '["admin", "employee"]'
+    assert event.correlation_id == str(correlation_id)
+    assert event.error_code == "FORBIDDEN"
 
 
 def test_audit_schema_migration_adds_authenticated_context_columns(tmp_path) -> None:

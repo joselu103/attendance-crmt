@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import DateTime, Integer, String, Text, create_engine
 from sqlalchemy.engine import URL, Engine
@@ -90,14 +91,22 @@ class AuditLog:
         request: Mapping[str, Any],
         outcome: str,
         duration_ms: int,
+        employee_id: int | None = None,
+        roles: frozenset[str] = frozenset(),
+        correlation_id: UUID | None = None,
+        error_code: str | None = None,
     ) -> None:
         """Add one immutable audit event."""
         event = AuditEvent(
             occurred_at_utc=datetime.now(UTC),
             actor_id=actor_id,
+            employee_id=employee_id,
+            roles_json=json.dumps(sorted(roles)),
+            correlation_id=str(correlation_id) if correlation_id is not None else None,
             tool_name=tool_name,
             request_json=json.dumps(_sanitize(request), sort_keys=True, default=str),
             outcome=outcome,
+            error_code=error_code,
             duration_ms=duration_ms,
         )
         with self._session_factory.begin() as session:
