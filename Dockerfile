@@ -36,4 +36,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["fastmcp", "run", "src/attendance_crmt/server.py", "--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "attendance_crmt.server:app", "--host", "0.0.0.0", "--port", "8000"]
