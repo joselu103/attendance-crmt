@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from fastmcp.exceptions import ToolError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
@@ -38,6 +39,7 @@ from attendance_crmt.attendance.contracts import (
 )
 from attendance_crmt.identity import Requester
 from attendance_crmt.models import AttendanceLog, Employee, PlannedWork
+from attendance_crmt.security_errors import FORBIDDEN_MESSAGE, SecurityErrorResponse
 
 _PUNCH_TYPE_STATUS: dict[int, LiveAttendanceStatus] = {
     1: "office",
@@ -49,6 +51,11 @@ _PUNCH_TYPE_STATUS: dict[int, LiveAttendanceStatus] = {
 }
 
 
+def _forbidden_error() -> ToolError:
+    response = SecurityErrorResponse(code="FORBIDDEN", message=FORBIDDEN_MESSAGE)
+    return ToolError(response.model_dump_json())
+
+
 def list_attendance_events(
     *,
     requester: Requester,
@@ -57,7 +64,7 @@ def list_attendance_events(
 ) -> AttendanceEventPage:
     """Authorize the requester and return one employee's attendance events."""
     if "admin" not in requester.roles:
-        raise PermissionError("Only administrators may view another employee's events.")
+        raise _forbidden_error()
     return _list_attendance_events_for_employee(
         session_factory=session_factory,
         query=query,

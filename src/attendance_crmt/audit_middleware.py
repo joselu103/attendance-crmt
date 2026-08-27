@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable, Mapping
 from time import perf_counter
 from typing import Any
@@ -40,7 +41,12 @@ def _classify_public_failure(error: Exception) -> tuple[str | None, Exception]:
         )
         return "BACKEND_UNAVAILABLE", ToolError(response.model_dump_json())
     if isinstance(error, ToolError):
-        return None, error
+        try:
+            payload = json.loads(str(error))
+        except json.JSONDecodeError:
+            return None, error
+        code = payload.get("code") if isinstance(payload, dict) else None
+        return code if isinstance(code, str) else None, error
     response = SecurityErrorResponse(
         code="INTERNAL_ERROR", message=INTERNAL_ERROR_MESSAGE
     )

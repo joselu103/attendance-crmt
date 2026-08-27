@@ -213,9 +213,7 @@ def test_non_admin_cannot_list_an_employees_attendance_events(
         )
     )
 
-    with pytest.raises(
-        ToolError, match="Only administrators may view another employee's events"
-    ):
+    with pytest.raises(ToolError, match='"FORBIDDEN"'):
         asyncio.run(
             server.call_tool(
                 "list_attendance_events",
