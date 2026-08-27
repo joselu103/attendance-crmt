@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, model_validator
 
 AUTHENTICATION_REQUIRED_MESSAGE = "Please sign in to use Attendance."
@@ -41,6 +42,32 @@ SECURITY_ERROR_MESSAGES: dict[SecurityErrorCode, str] = {
     "BACKEND_UNAVAILABLE": BACKEND_UNAVAILABLE_MESSAGE,
     "INTERNAL_ERROR": INTERNAL_ERROR_MESSAGE,
 }
+
+
+class SecurityFailure(Exception):
+    """Typed internal security failure with optional validated actor context."""
+
+    def __init__(
+        self,
+        *,
+        code: SecurityErrorCode,
+        actor_id: str | None = None,
+    ) -> None:
+        super().__init__(code)
+        self.code: SecurityErrorCode = code
+        self.actor_id = actor_id
+
+    @property
+    def response(self) -> SecurityErrorResponse:
+        """Return the canonical public response without internal diagnostics."""
+        return SecurityErrorResponse(
+            code=self.code,
+            message=SECURITY_ERROR_MESSAGES[self.code],
+        )
+
+    def as_tool_error(self) -> ToolError:
+        """Adapt this typed failure at the FastMCP boundary."""
+        return ToolError(self.response.model_dump_json())
 
 
 class SecurityErrorResponse(BaseModel):

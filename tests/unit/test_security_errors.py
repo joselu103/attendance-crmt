@@ -1,7 +1,35 @@
 import pytest
+from fastmcp.exceptions import ToolError
 from pydantic import ValidationError
 
-from attendance_crmt.security_errors import TOKEN_INVALID_MESSAGE, SecurityErrorResponse
+from attendance_crmt.security_errors import (
+    FORBIDDEN_MESSAGE,
+    TOKEN_INVALID_MESSAGE,
+    SecurityErrorResponse,
+    SecurityFailure,
+)
+
+
+def test_security_failure_derives_the_canonical_safe_response() -> None:
+    failure = SecurityFailure(code="FORBIDDEN")
+
+    assert failure.code == "FORBIDDEN"
+    assert failure.actor_id is None
+    assert failure.response == SecurityErrorResponse(
+        code="FORBIDDEN",
+        message=FORBIDDEN_MESSAGE,
+    )
+    assert isinstance(failure.as_tool_error(), ToolError)
+
+
+def test_security_failure_keeps_actor_context_out_of_public_response() -> None:
+    failure = SecurityFailure(
+        code="IDENTITY_UNMAPPED",
+        actor_id="tenant-id:object-id",
+    )
+
+    assert failure.actor_id == "tenant-id:object-id"
+    assert "tenant-id:object-id" not in failure.response.model_dump_json()
 
 
 def test_security_error_response_serializes_stable_code_and_safe_message() -> None:
