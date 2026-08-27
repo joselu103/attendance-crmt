@@ -11,15 +11,11 @@ from sqlalchemy.exc import OperationalError
 from attendance_crmt import audit_middleware
 from attendance_crmt.audit_middleware import AuditMiddleware
 from attendance_crmt.identity import (
-    AuthenticatedIdentityResolutionError,
     Requester,
     StaticRequesterResolver,
 )
 from attendance_crmt.observability import configure_structlog, get_logger
-from attendance_crmt.security_errors import (
-    BACKEND_UNAVAILABLE_MESSAGE,
-    IDENTITY_UNMAPPED_MESSAGE,
-)
+from attendance_crmt.security_errors import SecurityFailure
 
 
 class CapturingAuditLog:
@@ -94,9 +90,8 @@ def test_audit_middleware_replaces_audit_store_failures_with_safe_error_code() -
 
 class FailingIdentityResolver:
     def resolve(self, context: Any) -> Requester:
-        raise AuthenticatedIdentityResolutionError(
+        raise SecurityFailure(
             code="IDENTITY_UNMAPPED",
-            message=IDENTITY_UNMAPPED_MESSAGE,
             actor_id="22222222-2222-2222-2222-222222222222:33333333-3333-3333-3333-333333333333",
         )
 
@@ -123,7 +118,7 @@ def test_audit_middleware_records_partial_identity_context() -> None:
     assert audit_log.records[0]["error_code"] == "IDENTITY_UNMAPPED"
 
 
-class NonSerializableIdentityFailure(AuthenticatedIdentityResolutionError):
+class NonSerializableIdentityFailure(SecurityFailure):
     def __str__(self) -> str:
         return "sensitive backend sentinel"
 
@@ -132,7 +127,6 @@ class FailingBackendIdentityResolver:
     def resolve(self, context: Any) -> Requester:
         raise NonSerializableIdentityFailure(
             code="BACKEND_UNAVAILABLE",
-            message=BACKEND_UNAVAILABLE_MESSAGE,
             actor_id="22222222-2222-2222-2222-222222222222:***",
         )
 

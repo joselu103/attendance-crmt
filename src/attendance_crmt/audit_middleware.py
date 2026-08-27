@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Callable, Mapping
 from time import perf_counter
 from typing import Any
@@ -16,7 +15,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from attendance_crmt.audit import AuditLog
 from attendance_crmt.http_contract import get_current_correlation_id
 from attendance_crmt.identity import (
-    AuthenticatedIdentityResolutionError,
     Requester,
     RequesterResolver,
 )
@@ -26,12 +24,15 @@ from attendance_crmt.security_errors import (
     FORBIDDEN_MESSAGE,
     INTERNAL_ERROR_MESSAGE,
     SecurityErrorResponse,
+    SecurityFailure,
 )
 
 logger = get_logger(__name__)
 
 
 def _classify_public_failure(error: Exception) -> tuple[str | None, Exception]:
+    if isinstance(error, SecurityFailure):
+        return error.code, error.as_tool_error()
     if isinstance(error, PermissionError):
         response = SecurityErrorResponse(code="FORBIDDEN", message=FORBIDDEN_MESSAGE)
         return "FORBIDDEN", ToolError(response.model_dump_json())
@@ -41,12 +42,7 @@ def _classify_public_failure(error: Exception) -> tuple[str | None, Exception]:
         )
         return "BACKEND_UNAVAILABLE", ToolError(response.model_dump_json())
     if isinstance(error, ToolError):
-        try:
-            payload = json.loads(str(error))
-        except json.JSONDecodeError:
-            return None, error
-        code = payload.get("code") if isinstance(payload, dict) else None
-        return code if isinstance(code, str) else None, error
+        return None, error
     response = SecurityErrorResponse(
         code="INTERNAL_ERROR", message=INTERNAL_ERROR_MESSAGE
     )
@@ -76,11 +72,11 @@ class AuditMiddleware(Middleware):
             correlation_id = uuid4()
         try:
             requester = self._requester_resolver.resolve(context)
-        except AuthenticatedIdentityResolutionError as error:
+        except SecurityFailure as error:
             await self._record_or_raise(
                 tool_name=tool_name,
                 requester=Requester(
-                    actor_id=error.actor_id,
+                    actor_id=error.actor_id or "unresolved",
                     employee_id=None,
                     roles=frozenset(),
                 ),
@@ -90,7 +86,7 @@ class AuditMiddleware(Middleware):
                 error_code=error.code,
                 started_at=started_at,
             )
-            raise
+            raise error.as_tool_error() from None
 
         try:
             result = await call_next(context)

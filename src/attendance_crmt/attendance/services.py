@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from fastmcp.exceptions import ToolError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
@@ -39,7 +38,7 @@ from attendance_crmt.attendance.contracts import (
 )
 from attendance_crmt.identity import Requester
 from attendance_crmt.models import AttendanceLog, Employee, PlannedWork
-from attendance_crmt.security_errors import FORBIDDEN_MESSAGE, SecurityErrorResponse
+from attendance_crmt.security_errors import SecurityFailure
 
 _PUNCH_TYPE_STATUS: dict[int, LiveAttendanceStatus] = {
     1: "office",
@@ -51,11 +50,6 @@ _PUNCH_TYPE_STATUS: dict[int, LiveAttendanceStatus] = {
 }
 
 
-def _forbidden_error() -> ToolError:
-    response = SecurityErrorResponse(code="FORBIDDEN", message=FORBIDDEN_MESSAGE)
-    return ToolError(response.model_dump_json())
-
-
 def list_attendance_events(
     *,
     requester: Requester,
@@ -64,7 +58,7 @@ def list_attendance_events(
 ) -> AttendanceEventPage:
     """Authorize the requester and return one employee's attendance events."""
     if "admin" not in requester.roles:
-        raise _forbidden_error()
+        raise SecurityFailure(code="FORBIDDEN")
     return _list_attendance_events_for_employee(
         session_factory=session_factory,
         query=query,
@@ -79,7 +73,7 @@ def list_my_attendance_events(
 ) -> AttendanceEventPage:
     """Return the requester-scoped attendance history without a target-ID input."""
     if requester.employee_id is None:
-        raise PermissionError("The requester is not mapped to an employee.")
+        raise SecurityFailure(code="IDENTITY_UNMAPPED")
     return _list_attendance_events_for_employee(
         session_factory=session_factory,
         query=AttendanceEventQuery(
@@ -134,7 +128,7 @@ def get_attendance_event(
 ) -> AttendanceEventDetail:
     """Return one administrator-authorized attendance event with audit metadata."""
     if "admin" not in requester.roles:
-        raise PermissionError("Only administrators may view attendance events.")
+        raise SecurityFailure(code="FORBIDDEN")
     with session_factory() as session:
         event = session.scalar(
             select(AttendanceLog)
@@ -231,9 +225,7 @@ def get_planned_work(
 ) -> PlannedWorkResult:
     """Return an administrator-authorized employee planned-work range."""
     if "admin" not in requester.roles:
-        raise PermissionError(
-            "Only administrators may view another employee's planned work."
-        )
+        raise SecurityFailure(code="FORBIDDEN")
     start_at = datetime.combine(query.start_date, time.min)
     end_exclusive = datetime.combine(query.end_date + timedelta(days=1), time.min)
     with session_factory() as session:
@@ -361,9 +353,7 @@ def get_employee_attendance_analysis(
 ) -> EmployeeAttendanceAnalysis:
     """Return an administrator-authorized daily and grouped attendance analysis."""
     if "admin" not in requester.roles:
-        raise PermissionError(
-            "Only administrators may view another employee's analysis."
-        )
+        raise SecurityFailure(code="FORBIDDEN")
 
     start_at = datetime.combine(query.start_date, time.min)
     end_exclusive = datetime.combine(query.end_date + timedelta(days=1), time.min)
@@ -518,7 +508,7 @@ def get_organization_attendance_analysis(
 ) -> OrganizationAttendanceAnalysis:
     """Return active-workforce totals and a page of employee analysis summaries."""
     if "admin" not in requester.roles:
-        raise PermissionError("Only administrators may view organization analysis.")
+        raise SecurityFailure(code="FORBIDDEN")
 
     with session_factory() as session:
         employees = list(
@@ -577,7 +567,7 @@ def get_attendance_exceptions(
 ) -> AttendanceExceptionsPage:
     """Return a bounded administrator operational report of daily exceptions."""
     if "admin" not in requester.roles:
-        raise PermissionError("Only administrators may view attendance exceptions.")
+        raise SecurityFailure(code="FORBIDDEN")
     with session_factory() as session:
         statement = select(Employee).where(Employee.active == 1)
         if query.employee_ids is not None:

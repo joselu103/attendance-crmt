@@ -1,5 +1,6 @@
 """Stable, safe security error contracts shared across transport boundaries."""
 
+import json
 from typing import Literal
 
 from fastmcp.exceptions import ToolError
@@ -44,8 +45,8 @@ SECURITY_ERROR_MESSAGES: dict[SecurityErrorCode, str] = {
 }
 
 
-class SecurityFailure(Exception):
-    """Typed internal security failure with optional validated actor context."""
+class SecurityFailure(ToolError):
+    """Typed security failure that serializes only at the FastMCP boundary."""
 
     def __init__(
         self,
@@ -53,9 +54,14 @@ class SecurityFailure(Exception):
         code: SecurityErrorCode,
         actor_id: str | None = None,
     ) -> None:
-        super().__init__(code)
         self.code: SecurityErrorCode = code
         self.actor_id = actor_id
+        super().__init__(
+            json.dumps(
+                {"code": code, "message": SECURITY_ERROR_MESSAGES[code]},
+                separators=(",", ":"),
+            )
+        )
 
     @property
     def response(self) -> SecurityErrorResponse:
@@ -67,7 +73,7 @@ class SecurityFailure(Exception):
 
     def as_tool_error(self) -> ToolError:
         """Adapt this typed failure at the FastMCP boundary."""
-        return ToolError(self.response.model_dump_json())
+        return self
 
 
 class SecurityErrorResponse(BaseModel):

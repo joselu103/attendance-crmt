@@ -1,13 +1,10 @@
-import json
 from typing import Any, Self
 
 import pytest
-from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from sqlalchemy.exc import OperationalError
 
 from attendance_crmt.identity import (
-    AuthenticatedIdentityResolutionError,
     AuthenticatedTokenRequesterResolver,
     EmailIdentityAmbiguousError,
     EmailIdentityUnmappedError,
@@ -18,6 +15,7 @@ from attendance_crmt.security_errors import (
     IDENTITY_AMBIGUOUS_MESSAGE,
     IDENTITY_UNMAPPED_MESSAGE,
     TOKEN_INVALID_MESSAGE,
+    SecurityFailure,
 )
 
 
@@ -162,12 +160,12 @@ def test_authenticated_requester_returns_identity_unmapped(
         access_token=_access_token(),
     )
 
-    with pytest.raises(AuthenticatedIdentityResolutionError) as error:
+    with pytest.raises(SecurityFailure) as error:
         resolver.resolve(context=None)
 
     assert error.value.actor_id == _access_token().subject
     assert error.value.code == "IDENTITY_UNMAPPED"
-    assert json.loads(str(error.value)) == {
+    assert error.value.response.model_dump(mode="json") == {
         "code": "IDENTITY_UNMAPPED",
         "message": IDENTITY_UNMAPPED_MESSAGE,
     }
@@ -196,12 +194,12 @@ def test_authenticated_requester_returns_backend_unavailable_for_database_failur
         access_token_provider=_access_token,
     )
 
-    with pytest.raises(AuthenticatedIdentityResolutionError) as error:
+    with pytest.raises(SecurityFailure) as error:
         resolver.resolve(context=None)
 
     assert error.value.actor_id == _access_token().subject
     assert error.value.code == "BACKEND_UNAVAILABLE"
-    assert json.loads(str(error.value)) == {
+    assert error.value.response.model_dump(mode="json") == {
         "code": "BACKEND_UNAVAILABLE",
         "message": BACKEND_UNAVAILABLE_MESSAGE,
     }
@@ -221,10 +219,10 @@ def test_authenticated_requester_returns_identity_ambiguous(
         access_token=_access_token(),
     )
 
-    with pytest.raises(ToolError) as error:
+    with pytest.raises(SecurityFailure) as error:
         resolver.resolve(context=None)
 
-    assert json.loads(str(error.value)) == {
+    assert error.value.response.model_dump(mode="json") == {
         "code": "IDENTITY_AMBIGUOUS",
         "message": IDENTITY_AMBIGUOUS_MESSAGE,
     }
@@ -272,10 +270,10 @@ def test_authenticated_requester_rejects_missing_validated_identity_claims(
         access_token=access_token,
     )
 
-    with pytest.raises(ToolError) as error:
+    with pytest.raises(SecurityFailure) as error:
         resolver.resolve(context=None)
 
-    assert json.loads(str(error.value)) == {
+    assert error.value.response.model_dump(mode="json") == {
         "code": "TOKEN_INVALID",
         "message": TOKEN_INVALID_MESSAGE,
     }

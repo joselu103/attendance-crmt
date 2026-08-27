@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
-from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.dependencies import get_access_token
 from sqlalchemy import func, select
@@ -15,14 +14,7 @@ from sqlalchemy.exc import MultipleResultsFound, NoResultFound, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from attendance_crmt.models import Employee
-from attendance_crmt.security_errors import (
-    BACKEND_UNAVAILABLE_MESSAGE,
-    IDENTITY_AMBIGUOUS_MESSAGE,
-    IDENTITY_UNMAPPED_MESSAGE,
-    TOKEN_INVALID_MESSAGE,
-    SecurityErrorCode,
-    SecurityErrorResponse,
-)
+from attendance_crmt.security_errors import SecurityErrorCode, SecurityFailure
 
 
 @dataclass(frozen=True)
@@ -79,16 +71,6 @@ def resolve_active_employee_id_for_email(
             raise EmailIdentityAmbiguousError from error
 
 
-class AuthenticatedIdentityResolutionError(ToolError):
-    """Safe identity failure retaining only the already-validated actor ID."""
-
-    def __init__(self, *, code: SecurityErrorCode, message: str, actor_id: str) -> None:
-        response = SecurityErrorResponse(code=code, message=message)
-        super().__init__(response.model_dump_json())
-        self.code = code
-        self.actor_id = actor_id
-
-
 @dataclass(frozen=True)
 class AuthenticatedTokenRequesterResolver:
     """Derive one requester exclusively from FastMCP's validated access token."""
@@ -125,19 +107,16 @@ class AuthenticatedTokenRequesterResolver:
         except EmailIdentityUnmappedError:
             raise self._identity_error(
                 code="IDENTITY_UNMAPPED",
-                message=IDENTITY_UNMAPPED_MESSAGE,
                 actor_id=actor_id,
             ) from None
         except EmailIdentityAmbiguousError:
             raise self._identity_error(
                 code="IDENTITY_AMBIGUOUS",
-                message=IDENTITY_AMBIGUOUS_MESSAGE,
                 actor_id=actor_id,
             ) from None
         except SQLAlchemyError:
             raise self._identity_error(
                 code="BACKEND_UNAVAILABLE",
-                message=BACKEND_UNAVAILABLE_MESSAGE,
                 actor_id=actor_id,
             ) from None
 
@@ -156,19 +135,9 @@ class AuthenticatedTokenRequesterResolver:
         return any(role == self.admin_role for role in raw_roles)
 
     @staticmethod
-    def _identity_error(
-        *, code: SecurityErrorCode, message: str, actor_id: str
-    ) -> AuthenticatedIdentityResolutionError:
-        return AuthenticatedIdentityResolutionError(
-            code=code,
-            message=message,
-            actor_id=actor_id,
-        )
+    def _identity_error(*, code: SecurityErrorCode, actor_id: str) -> SecurityFailure:
+        return SecurityFailure(code=code, actor_id=actor_id)
 
     @staticmethod
-    def _token_invalid_error() -> ToolError:
-        response = SecurityErrorResponse(
-            code="TOKEN_INVALID",
-            message=TOKEN_INVALID_MESSAGE,
-        )
-        return ToolError(response.model_dump_json())
+    def _token_invalid_error() -> SecurityFailure:
+        return SecurityFailure(code="TOKEN_INVALID")
