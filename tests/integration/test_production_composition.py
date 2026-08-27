@@ -6,7 +6,11 @@ from attendance_crmt.authentication import EntraTokenVerifier
 from attendance_crmt.dependencies import create_production_dependencies
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver
 from attendance_crmt.security_errors import AUTHENTICATION_REQUIRED_MESSAGE
-from attendance_crmt.server import create_production_server, create_server
+from attendance_crmt.server import (
+    create_production_http_app,
+    create_production_server,
+    create_server,
+)
 from attendance_crmt.settings import Settings
 
 
@@ -35,6 +39,17 @@ def test_production_dependencies_use_authenticated_requester(
     server = create_server(dependencies, settings=settings)
 
     assert server.auth is dependencies.auth_provider
+
+
+def test_production_http_app_factory_builds_authenticated_contract_app(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    settings = _production_test_settings(monkeypatch, tmp_path)
+
+    app = create_production_http_app(settings)
+
+    assert app is not None
 
 
 def test_production_server_requires_bearer_authentication(

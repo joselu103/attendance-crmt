@@ -62,5 +62,6 @@ def create_http_app(server: FastMCP) -> ASGIApp:
     )
 
 
-mcp = create_production_server()
-app = create_http_app(mcp)
+def create_production_http_app(settings: Settings | None = None) -> ASGIApp:
+    """Build the production Attendance MCP ASGI application."""
+    return create_http_app(create_production_server(settings))

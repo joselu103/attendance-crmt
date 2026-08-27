@@ -1,11 +1,11 @@
-"""attendance-crmt FastMCP server package."""
-
-from attendance_crmt.server import mcp
+"""Attendance CRMT FastMCP server package."""
 
 
 def main() -> None:
-    """Run the FastMCP server through stdio"""
-    mcp.run(transport="stdio")
+    """Run the production FastMCP server through stdio."""
+    from attendance_crmt.server import create_production_server
+
+    create_production_server().run(transport="stdio")
 
 
-__all__ = ["main", "mcp"]
+__all__ = ["main"]
