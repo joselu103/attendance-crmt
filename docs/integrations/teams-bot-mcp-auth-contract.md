@@ -1,7 +1,7 @@
 # Attendance Teams Bot ↔ Attendance CRMT MCP Authentication Contract
 
 - **Status:** Accepted for the first authenticated, read-only integration slice
-- **Contract version:** 1.1.0
+- **Contract version:** 1.2.0
 - **Owner:** Attendance CRMT MCP server
 - **Consumers:** Attendance Teams Bot and future authorized MCP clients
 
@@ -50,6 +50,62 @@ scope, so the initial product must remain personal-chat focused.
 The current container already serves FastMCP Streamable HTTP on port 8000. The
 reverse proxy/deployment layer must expose only the HTTPS endpoint; port 8000
 is not a public contract.
+
+### 3.1 Canonical requester tool: `list_my_attendance_events`
+
+This is the first client operation. The bot calls it only with the validated
+user's delegated access token; it never supplies an employee identity.
+
+| Input | Type | Required | Rule |
+| --- | --- | --- | --- |
+| `start_date` | ISO 8601 `date` | Yes | Inclusive Europe/Ljubljana calendar date. |
+| `end_date` | ISO 8601 `date` | Yes | Inclusive date, not before `start_date`; the range is at most 31 calendar days. |
+| `limit` | integer | No | Defaults to 50; must be 1 through 100. |
+| `offset` | integer | No | Defaults to 0; must be nonnegative. |
+
+The tool accepts **no** `employee_id`, email, actor ID, tenant/object ID, or
+role argument. CRMT derives the employee ID from the validated token and its
+unique active-email mapping. The client/LLM must not calculate, override, or
+select that identity.
+
+The result is an immutable `AttendanceEventPage` with the following JSON shape:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `items` | array | Ordered attendance-event summaries for the server-derived employee. |
+| `limit` | integer | Applied page size. |
+| `offset` | integer | Applied page offset. |
+| `next_offset` | integer or `null` | Offset for the next page, or `null` when exhausted. |
+| `items[].attendance_event_id` | integer | Established attendance-log identifier. |
+| `items[].employee_id` | integer | Server-derived employee identity; informational only. |
+| `items[].punch_type`, `items[].location`, `items[].note` | string or `null` | Recorded attendance metadata. |
+| `items[].checked_in_at`, `items[].checked_out_at` | RFC 3339 timestamp or `null` | Europe/Ljubljana local wall-clock time with the applicable UTC offset. |
+
+Illustrative successful result:
+
+```json
+{
+  "items": [
+    {
+      "attendance_event_id": 100,
+      "employee_id": 42,
+      "punch_type": "Remote work",
+      "location": "Home",
+      "checked_in_at": "2026-08-10T08:00:00+02:00",
+      "checked_out_at": "2026-08-10T16:00:00+02:00",
+      "note": null
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "next_offset": null
+}
+```
+
+Invalid requester date ranges or pagination values return the MCP tool error
+`INVALID_ARGUMENT` with the safe message “Check the attendance date range and
+pagination values and try again.” Validation diagnostics and rejected values are
+not public contract data.
 
 ## 4. Entra application topology
 
@@ -154,7 +210,7 @@ The lookup succeeds only when exactly one row satisfies all of these conditions:
 
 The existing production schema supports this read-only lookup: `izvajalci` has
 the canonical `izvajalec_id` primary key, an `email varchar(50)` column, and an
-`active` flag. The legacy `UserId` foreign key to `dbo.aspnet_Users` is not an
+`active` flag. The existing `UserId` foreign key to `dbo.aspnet_Users` is not an
 Entra identifier and is not part of this integration.
 
 The server derives `employee_id` from the unique matching employee. It must not
@@ -168,7 +224,7 @@ It is intentionally conservative:
 - more than one active employee with the same normalized email returns
   `IDENTITY_AMBIGUOUS`;
 - inactive employees are never matched; and
-- the server must not fall back to `username`, `domain_username`, the legacy
+- the server must not fall back to `username`, `domain_username`, the existing
   ASP.NET `UserId`, or fuzzy matching.
 
 The current development database has 62 active employees with a usable email
@@ -245,6 +301,7 @@ invent security details.
 | Invalid, expired, wrong-tenant, wrong-audience, or app-only token | Reject before MCP session | `TOKEN_INVALID` | “Your sign-in could not be verified. Please try again.” |
 | Valid token, no active matching employee email | Reject tool access | `IDENTITY_UNMAPPED` | “Your Teams account is not linked to an active attendance employee. Contact an administrator.” |
 | Valid token, more than one active matching employee email | Reject tool access | `IDENTITY_AMBIGUOUS` | “Your Teams account cannot be linked safely. Contact an administrator.” |
+| Invalid requester date range or pagination | MCP tool error; no validation diagnostics | `INVALID_ARGUMENT` | “Check the attendance date range and pagination values and try again.” |
 | Authenticated caller lacks a required role | Reject tool access | `FORBIDDEN` | “You do not have permission to do that.” |
 | Attendance SQL Server or required audit storage unavailable | No partial tool result; retry-safe failure | `BACKEND_UNAVAILABLE` | “Attendance is temporarily unavailable. Please try again shortly.” |
 | Unexpected server error | No internals disclosed | `INTERNAL_ERROR` | “Attendance could not complete that request.” |
@@ -256,7 +313,7 @@ canonical lowercase form. Missing, malformed, or duplicate values return HTTP
 `400` with `CORRELATION_ID_INVALID` only after bearer authentication succeeds;
 missing or invalid bearer authentication retains HTTP `401` precedence.
 
-The server publishes `X-Attendance-MCP-Contract-Version: 1.1.0` on MCP HTTP
+The server publishes `X-Attendance-MCP-Contract-Version: 1.2.0` on MCP HTTP
 responses. After an MCP session is established, authorization, mapping, and
 availability failures are MCP tool errors (`isError=true`) containing the stable
 code and safe message—not transport-level HTTP `403` or `503` rewrites. No
@@ -272,7 +329,7 @@ This document follows semantic versioning.
 - A major version changes authentication, authorization, existing tool schemas,
   or error semantics incompatibly.
 
-The server publishes `X-Attendance-MCP-Contract-Version: 1.1.0` on MCP HTTP
+The server publishes `X-Attendance-MCP-Contract-Version: 1.2.0` on MCP HTTP
 responses. The bot sends `X-Attendance-MCP-Contract-Version: 1` and refuses an
 incompatible major version before tool use.
 
@@ -283,7 +340,7 @@ silently change `/mcp` behavior.
 ## 12. Implementation sequence
 
 1. Preserve the existing SQL Server schema. Do not add an Entra mapping table,
-   modify `izvajalci`, or modify the legacy ASP.NET membership tables.
+   modify `izvajalci`, or modify the existing ASP.NET membership tables.
 2. Add Attendance CRMT settings and a tested Entra JWT validation component.
 3. Implement a read-only, active-email employee lookup and test the unique,
    missing, inactive, and duplicate-email outcomes against SQL Server-compatible

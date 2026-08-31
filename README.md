@@ -95,6 +95,20 @@ Unmapped and duplicate mappings return `IDENTITY_UNMAPPED` and
 `IDENTITY_AMBIGUOUS` respectively. Tests use explicitly injected static fake
 requesters; production does not.
 
+## Teams bot MCP client contract
+
+The versioned client contract is
+[`docs/integrations/teams-bot-mcp-auth-contract.md`](docs/integrations/teams-bot-mcp-auth-contract.md).
+Its first requester-scoped operation is `list_my_attendance_events` over MCP
+Streamable HTTP at `/mcp`.
+
+Clients send `start_date`, `end_date`, optional `limit` (1-100, default 50),
+and optional nonnegative `offset`; the inclusive Europe/Ljubljana date range is
+at most 31 calendar days. Clients must not send an employee ID, email, role, or
+any other identity selector. CRMT derives the employee, validates the request,
+authorizes access, and records the audit event. Invalid range or pagination
+values are MCP tool errors with the stable `INVALID_ARGUMENT` code.
+
 ## Audit and structured logging
 
 Every successful or failed MCP tool interaction that reaches a registered tool
@@ -113,7 +127,7 @@ operations.
 
 Authenticated HTTP MCP clients must send exactly one UUID
 `X-Correlation-ID` on every request. The server normalizes it, records it with
-new audit rows, and publishes contract version `1.1.0` in
+new audit rows, and publishes contract version `1.2.0` in
 `X-Attendance-MCP-Contract-Version`. Direct in-memory tests explicitly inject a
 fixed correlation resolver.
 

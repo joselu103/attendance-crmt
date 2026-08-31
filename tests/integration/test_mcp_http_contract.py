@@ -81,6 +81,12 @@ def _assert_contract_version(response: httpx.Response) -> None:
     assert response.headers[CONTRACT_VERSION_HEADER] == ATTENDANCE_MCP_CONTRACT_VERSION
 
 
+def test_published_contract_version_is_1_2_0() -> None:
+    response = _post_mcp(_mcp_app())
+
+    assert response.headers[CONTRACT_VERSION_HEADER] == "1.2.0"
+
+
 def test_missing_bearer_keeps_authentication_required_precedence() -> None:
     response = _post_mcp(_mcp_app())
 

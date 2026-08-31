@@ -13,7 +13,7 @@ from attendance_crmt.security_errors import (
     SecurityErrorResponse,
 )
 
-ATTENDANCE_MCP_CONTRACT_VERSION = "1.1.0"
+ATTENDANCE_MCP_CONTRACT_VERSION = "1.2.0"
 CONTRACT_VERSION_HEADER = "X-Attendance-MCP-Contract-Version"
 CORRELATION_ID_HEADER = "X-Correlation-ID"
 MCP_PATH = "/mcp"
