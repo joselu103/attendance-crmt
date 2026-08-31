@@ -53,6 +53,21 @@ class StaticRequesterResolver:
         return self.requester
 
 
+def normalized_active_employee_email_expression():
+    """Return the SQL key used for active-employee email identity matching."""
+    return func.lower(func.ltrim(func.rtrim(Employee.email)))
+
+
+def active_employee_with_usable_email_conditions() -> tuple[object, ...]:
+    """Return the shared SQL predicates for a usable active employee email."""
+    normalized_email = normalized_active_employee_email_expression()
+    return (
+        Employee.active == 1,
+        Employee.email.is_not(None),
+        normalized_email != "",
+    )
+
+
 def resolve_active_employee_id_for_email(
     *, session_factory: sessionmaker[Session], email: str
 ) -> int:
@@ -60,7 +75,7 @@ def resolve_active_employee_id_for_email(
     normalized_email = email.strip().lower()
     statement = select(Employee.izvajalec_id).where(
         Employee.active == 1,
-        func.lower(func.ltrim(func.rtrim(Employee.email))) == normalized_email,
+        normalized_active_employee_email_expression() == normalized_email,
     )
     with session_factory() as session:
         try:

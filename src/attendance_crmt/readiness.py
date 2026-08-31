@@ -11,6 +11,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from attendance_crmt.database import create_engine_for_url, create_session_factory
+from attendance_crmt.identity import (
+    active_employee_with_usable_email_conditions,
+    normalized_active_employee_email_expression,
+)
 from attendance_crmt.models import Employee
 from attendance_crmt.settings import get_settings
 
@@ -31,12 +35,8 @@ def check_active_email_uniqueness(
     session_factory: sessionmaker[Session],
 ) -> ActiveEmailUniquenessResult:
     """Count active-email mapping conflicts without selecting identity values."""
-    normalized_email = func.lower(func.ltrim(func.rtrim(Employee.email)))
-    usable_active_email = (
-        Employee.active == 1,
-        Employee.email.is_not(None),
-        func.ltrim(func.rtrim(Employee.email)) != "",
-    )
+    normalized_email = normalized_active_employee_email_expression()
+    usable_active_email = active_employee_with_usable_email_conditions()
     duplicate_group_count = func.count(Employee.izvajalec_id)
 
     with session_factory() as session:
