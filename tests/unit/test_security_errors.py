@@ -4,6 +4,7 @@ from pydantic import ValidationError
 
 from attendance_crmt.security_errors import (
     FORBIDDEN_MESSAGE,
+    INVALID_ARGUMENT_MESSAGE,
     TOKEN_INVALID_MESSAGE,
     SecurityErrorResponse,
     SecurityFailure,
@@ -30,6 +31,15 @@ def test_security_failure_keeps_actor_context_out_of_public_response() -> None:
 
     assert failure.actor_id == "tenant-id:object-id"
     assert "tenant-id:object-id" not in failure.response.model_dump_json()
+
+
+def test_invalid_argument_failure_uses_canonical_safe_payload() -> None:
+    failure = SecurityFailure(code="INVALID_ARGUMENT")
+
+    assert failure.response.model_dump(mode="json") == {
+        "code": "INVALID_ARGUMENT",
+        "message": INVALID_ARGUMENT_MESSAGE,
+    }
 
 
 def test_security_error_response_serializes_stable_code_and_safe_message() -> None:

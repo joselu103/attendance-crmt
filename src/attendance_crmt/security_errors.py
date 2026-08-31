@@ -16,6 +16,9 @@ IDENTITY_AMBIGUOUS_MESSAGE = (
     "Your Teams account cannot be linked safely. Contact an administrator."
 )
 CORRELATION_ID_INVALID_MESSAGE = "The request correlation ID is missing or invalid."
+INVALID_ARGUMENT_MESSAGE = (
+    "Check the attendance date range and pagination values and try again."
+)
 FORBIDDEN_MESSAGE = "You do not have permission to do that."
 BACKEND_UNAVAILABLE_MESSAGE = (
     "Attendance is temporarily unavailable. Please try again shortly."
@@ -26,6 +29,7 @@ SecurityErrorCode = Literal[
     "AUTHENTICATION_REQUIRED",
     "TOKEN_INVALID",
     "CORRELATION_ID_INVALID",
+    "INVALID_ARGUMENT",
     "IDENTITY_UNMAPPED",
     "IDENTITY_AMBIGUOUS",
     "FORBIDDEN",
@@ -37,6 +41,7 @@ SECURITY_ERROR_MESSAGES: dict[SecurityErrorCode, str] = {
     "AUTHENTICATION_REQUIRED": AUTHENTICATION_REQUIRED_MESSAGE,
     "TOKEN_INVALID": TOKEN_INVALID_MESSAGE,
     "CORRELATION_ID_INVALID": CORRELATION_ID_INVALID_MESSAGE,
+    "INVALID_ARGUMENT": INVALID_ARGUMENT_MESSAGE,
     "IDENTITY_UNMAPPED": IDENTITY_UNMAPPED_MESSAGE,
     "IDENTITY_AMBIGUOUS": IDENTITY_AMBIGUOUS_MESSAGE,
     "FORBIDDEN": FORBIDDEN_MESSAGE,
