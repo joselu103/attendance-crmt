@@ -182,8 +182,8 @@ def test_admin_can_list_an_employees_attendance_events(
                 "employee_id": 42,
                 "punch_type": "Remote work",
                 "location": "Home",
-                "checked_in_at": "2026-08-10T08:00:00",
-                "checked_out_at": "2026-08-10T16:00:00",
+                "checked_in_at": "2026-08-10T08:00:00+02:00",
+                "checked_out_at": "2026-08-10T16:00:00+02:00",
                 "note": "Client handover",
             }
         ],

@@ -113,7 +113,9 @@ def _list_attendance_events_for_employee(
         )
     has_next_page = len(events) > query.limit
     return AttendanceEventPage(
-        items=[_attendance_event_summary(event) for event in events[: query.limit]],
+        items=tuple(
+            _attendance_event_summary(event) for event in events[: query.limit]
+        ),
         limit=query.limit,
         offset=query.offset,
         next_offset=query.offset + query.limit if has_next_page else None,

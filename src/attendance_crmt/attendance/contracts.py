@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 _EUROPE_LJUBLJANA = ZoneInfo("Europe/Ljubljana")
+_MAX_REQUESTER_ATTENDANCE_RANGE_DAYS = 31
 
 
 def _serialize_local_datetime(value: datetime) -> str:
@@ -58,6 +59,12 @@ class MyAttendanceEventQuery(BaseModel):
             raise ValueError("offset must not be negative.")
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date.")
+        if (self.end_date - self.start_date).days >= (
+            _MAX_REQUESTER_ATTENDANCE_RANGE_DAYS
+        ):
+            raise ValueError(
+                "requester attendance date range must not exceed 31 calendar days."
+            )
         return self
 
 
@@ -74,13 +81,18 @@ class AttendanceEventSummary(BaseModel):
     checked_out_at: datetime | None
     note: str | None
 
+    @field_serializer("checked_in_at", "checked_out_at", when_used="json")
+    def serialize_event_timestamp(self, value: datetime | None) -> str | None:
+        """Expose database-local timestamps with their Europe/Ljubljana offset."""
+        return _serialize_local_datetime(value) if value is not None else None
+
 
 class AttendanceEventPage(BaseModel):
-    """A bounded page of attendance events for one employee."""
+    """A bounded page of immutable attendance events for one employee."""
 
     model_config = ConfigDict(frozen=True)
 
-    items: list[AttendanceEventSummary]
+    items: tuple[AttendanceEventSummary, ...]
     limit: int
     offset: int
     next_offset: int | None
