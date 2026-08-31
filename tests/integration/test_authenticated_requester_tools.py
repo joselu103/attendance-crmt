@@ -69,10 +69,18 @@ def test_authenticated_requester_sees_only_mapped_employee_attendance(
     assert "employee_id" not in my_events_tool.parameters["properties"]
     assert "email" not in my_events_tool.parameters["properties"]
     assert "role" not in my_events_tool.parameters["properties"]
+    assert set(my_events_tool.parameters["properties"]) == {
+        "start_date",
+        "end_date",
+        "limit",
+        "offset",
+    }
+    assert my_events_tool.description is not None
+    assert "31 inclusive calendar days" in my_events_tool.description
 
-    async def call_tool() -> CallToolResult:
+    async def call_tool() -> tuple[CallToolResult, CallToolResult]:
         async with Client(server) as client:
-            return await client.call_tool(
+            successful_result = await client.call_tool(
                 "list_my_attendance_events",
                 {
                     "start_date": date(2026, 8, 10),
@@ -80,10 +88,25 @@ def test_authenticated_requester_sees_only_mapped_employee_attendance(
                 },
                 raise_on_error=False,
             )
+            invalid_result = await client.call_tool(
+                "list_my_attendance_events",
+                {
+                    "start_date": date(2026, 8, 1),
+                    "end_date": date(2026, 9, 1),
+                },
+                raise_on_error=False,
+            )
+            return successful_result, invalid_result
 
-    result = asyncio.run(call_tool())
+    result, invalid_result = asyncio.run(call_tool())
 
     assert result.is_error is False
     assert isinstance(result.content[0], TextContent)
     page = json.loads(result.content[0].text)
     assert [event["employee_id"] for event in page["items"]] == [42]
+    assert invalid_result.is_error is True
+    assert isinstance(invalid_result.content[0], TextContent)
+    assert json.loads(invalid_result.content[0].text) == {
+        "code": "INVALID_ARGUMENT",
+        "message": "Check the attendance date range and pagination values and try again.",
+    }

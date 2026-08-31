@@ -6,6 +6,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from fastmcp import Context, FastMCP
+from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from attendance_crmt.attendance.contracts import (
@@ -57,6 +58,26 @@ from attendance_crmt.attendance.services import (
     list_my_attendance_events as query_my_attendance_events,
 )
 from attendance_crmt.identity import RequesterResolver
+from attendance_crmt.security_errors import SecurityFailure
+
+
+def _my_attendance_query(
+    *,
+    start_date: date,
+    end_date: date,
+    limit: int,
+    offset: int,
+) -> MyAttendanceEventQuery:
+    """Validate requester-supplied criteria without exposing Pydantic diagnostics."""
+    try:
+        return MyAttendanceEventQuery(
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            offset=offset,
+        )
+    except ValidationError:
+        raise SecurityFailure(code="INVALID_ARGUMENT") from None
 
 
 def register_attendance_tools(
@@ -95,8 +116,9 @@ def register_attendance_tools(
 
     @server.tool(
         description=(
-            "List the requesting employee's attendance events in a bounded date "
-            "range. Employee identity is resolved by the server."
+            "List the requesting employee's attendance events over one through 31 "
+            "inclusive calendar days. Employee identity is resolved by the server; "
+            "limit must be from 1 through 100 and offset must be nonnegative."
         )
     )
     def list_my_attendance_events(
@@ -110,7 +132,7 @@ def register_attendance_tools(
         return query_my_attendance_events(
             requester=requester_resolver.resolve(ctx),
             session_factory=session_factory,
-            query=MyAttendanceEventQuery(
+            query=_my_attendance_query(
                 start_date=start_date,
                 end_date=end_date,
                 limit=limit,

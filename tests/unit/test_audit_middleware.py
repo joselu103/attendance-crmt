@@ -186,6 +186,32 @@ def test_audit_middleware_replaces_permission_failures_with_safe_error_code() ->
     assert audit_log.records[0]["error_code"] == "FORBIDDEN"
 
 
+async def _invalid_argument_tool_result() -> SimpleNamespace:
+    raise SecurityFailure(code="INVALID_ARGUMENT")
+
+
+def test_audit_middleware_records_invalid_argument_failure() -> None:
+    audit_log = CapturingAuditLog()
+    middleware = AuditMiddleware(
+        audit_log=audit_log,  # type: ignore[arg-type]
+        requester_resolver=StaticRequesterResolver(
+            Requester(actor_id="actor", employee_id=42, roles=frozenset({"employee"}))
+        ),
+        correlation_id_provider=lambda: UUID("11111111-1111-1111-1111-111111111111"),
+    )
+    context = SimpleNamespace(message=SimpleNamespace(name="future_tool", arguments={}))
+
+    with pytest.raises(ToolError, match='"INVALID_ARGUMENT"'):
+        asyncio.run(
+            middleware.on_call_tool(
+                context, lambda _context: _invalid_argument_tool_result()
+            )
+        )
+
+    assert audit_log.records[0]["outcome"] == "failure"
+    assert audit_log.records[0]["error_code"] == "INVALID_ARGUMENT"
+
+
 async def _unavailable_tool_result() -> SimpleNamespace:
     raise OperationalError("SELECT 1", {}, ConnectionError("database unavailable"))
 
