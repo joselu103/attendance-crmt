@@ -1,0 +1,25 @@
+{
+  "repo_name": "attendance-crmt",
+  "status": "ready",
+  "provided_exports": {
+    "interfaces_or_endpoints": [
+      "MCP Streamable HTTP over HTTPS: /mcp; contract 1.2.0",
+      "list_my_attendance_events(start_date, end_date, limit=50, offset=0) -> AttendanceEventPage; server-derived employee; inclusive max 31 days"
+    ],
+    "events": []
+  },
+  "dependencies_needed": {
+    "entra": [
+      "Attendance CRMT API app registration exposing attendance.access and optional attendance.admin",
+      "Approved Teams bot client app registration with OBO consent and production certificate"
+    ],
+    "deployment": [
+      "Non-production HTTPS /mcp URL and concrete Entra configuration values",
+      "Production read-only active-email uniqueness readiness check"
+    ]
+  },
+  "open_issues_or_blockers": [
+    "Real Teams end-to-end testing remains blocked until Entra registrations, consent, credentials, and a deployed HTTPS CRMT endpoint exist.",
+    "Production rollout remains blocked until active employee email uniqueness is checked against the authoritative production SQL Server database."
+  ]
+}
