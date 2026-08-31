@@ -1,25 +1,31 @@
 {
   "repo_name": "attendance-crmt",
-  "status": "ready",
+  "status": "blocked",
   "provided_exports": {
     "interfaces_or_endpoints": [
-      "MCP Streamable HTTP over HTTPS: /mcp; contract 1.2.0",
-      "list_my_attendance_events(start_date, end_date, limit=50, offset=0) -> AttendanceEventPage; server-derived employee; inclusive max 31 days"
+      "Attendance CRMT MCP contract 1.2.0 source: list_my_attendance_events(start_date, end_date, limit=50, offset=0) -> AttendanceEventPage; server-derived employee; inclusive max 31 days",
+      "Read-only aggregate active-email readiness command: attendance-crmt-check-active-emails"
     ],
     "events": []
   },
   "dependencies_needed": {
     "entra": [
-      "Attendance CRMT API app registration exposing attendance.access and optional attendance.admin",
-      "Approved Teams bot client app registration with OBO consent and production certificate"
+      "Attendance CRMT API app registration exposing attendance.access",
+      "Approved Teams bot delegated permission, OBO consent, and production certificate configuration"
     ],
     "deployment": [
-      "Non-production HTTPS /mcp URL and concrete Entra configuration values",
-      "Production read-only active-email uniqueness readiness check"
+      "Authorized platform owner, non-production HTTPS /mcp hostname, approved Container App resource boundary, runtime secret injection, and persistent audit storage",
+      "Published source-identifiable CRMT container image"
+    ],
+    "database": [
+      "Approved non-production SQL Server read-only runtime access",
+      "Approved production SQL Server read-only access for active-email uniqueness readiness check and duplicate-remediation owner"
     ]
   },
   "open_issues_or_blockers": [
-    "Real Teams end-to-end testing remains blocked until Entra registrations, consent, credentials, and a deployed HTTPS CRMT endpoint exist.",
-    "Production rollout remains blocked until active employee email uniqueness is checked against the authoritative production SQL Server database."
+    "No verified non-production HTTPS /mcp deployment implementing contract 1.2.0 exists.",
+    "No verified Attendance CRMT Entra API registration exposing attendance.access exists.",
+    "Production active-email uniqueness readiness check has not run against the authoritative SQL Server database.",
+    "Real Teams attendance traffic remains disabled until Entra, OBO, certificate, deployed HTTPS MCP, production data-quality, and end-to-end requester/audit verification prerequisites pass."
   ]
 }

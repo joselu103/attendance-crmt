@@ -99,6 +99,12 @@ requesters; production does not.
 
 The versioned client contract is
 [`docs/integrations/teams-bot-mcp-auth-contract.md`](docs/integrations/teams-bot-mcp-auth-contract.md).
+The secret-free operational handoff and acceptance gates for a non-production
+HTTPS deployment are in
+[`docs/integrations/nonproduction-deployment-readiness.md`](docs/integrations/nonproduction-deployment-readiness.md).
+Its aggregate production active-email uniqueness check is available as
+`attendance-crmt-check-active-emails`; run it only through an approved read-only
+production access path.
 Its first requester-scoped operation is `list_my_attendance_events` over MCP
 Streamable HTTP at `/mcp`.
 
