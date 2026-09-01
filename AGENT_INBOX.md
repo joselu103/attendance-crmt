@@ -1,42 +1,40 @@
-# Directive: CRMT-DEPLOY-001
+# Directive: ACRMT-NONPROD-MCP-DEPLOY-001
 
 ## Main Objective
-Resolve the CRMT-owned operational prerequisites for real non-production Teams integration: obtain a deployed non-production HTTPS `/mcp` endpoint implementing contract 1.2.0 and complete the authoritative production active-email uniqueness readiness check, with evidence recorded as integration status rather than inferred readiness.
+Advance the upstream Attendance CRMT security boundary from a source-only MCP 1.2.0 contract toward a verifiable non-production HTTPS deployment by producing the repository-owned, source-identifiable deployment artifact and an executable verification handoff, while leaving real Teams attendance traffic disabled until every declared identity, database, deployment, and audit prerequisite passes.
 
 ## Key Context From Other Repositories
-
-- `attendance-teams-bot` is `ready` and supports a requester-scoped personal-chat read-only flow against CRMT contract 1.2.0. It is blocked until CRMT provides a deployed non-production HTTPS `/mcp` endpoint, a Microsoft Entra API registration exposing `attendance.access`, and approved OBO consent/certificate configuration.
-- `attendance-crmt-development-notices` is `blocked` but has public development privacy/terms/inventory exports. It depends on the same deployed CRMT endpoint, Entra API registration, and production active-email uniqueness readiness check; notice publication also has separate organizational approval blockers.
-- CRMT currently publishes contract 1.2.0 but declares the non-production endpoint, concrete Entra configuration, and production active-email uniqueness check as unresolved dependencies. Do not treat contract readiness as deployment readiness.
+- `attendance-crmt` is `blocked`; it declares the MCP 1.2.0 `list_my_attendance_events` contract and an active-email readiness command, but no verified non-production HTTPS `/mcp` deployment or Entra API registration exists. It also declares unresolved deployment, database-access, and production data-quality dependencies.
+- `attendance-teams-bot` is `ready`; it declares authenticated MCP 1.2.0 discovery and requester-scoped `list_my_attendance_events` orchestration. It still requires the deployed non-production HTTPS `/mcp` endpoint, the Entra API registration exposing `attendance.access`, delegated OBO consent, production certificate configuration, operational/privacy approval, and end-to-end identity and data verification.
+- `attendance-crmt-development-notices` is `blocked`; it declares public development notice URLs but still requires the deployed MCP endpoint, Entra registration, active-email readiness result, publication approvals, and end-to-end traffic-gating verification. Its reviewed local notice revisions are explicitly not declared published.
+- No expected repository is known to be missing an `AGENT_STATE.json`; the root coordination protocol does not provide a separate authoritative repository inventory, so discovery is limited to the three state files present.
 
 ## Specific Steps
-
-1. Inspect the local CRMT deployment/configuration and approved operational process to identify the authorized owner and exact inputs required for a non-production HTTPS `/mcp` deployment and Entra API registration.
-2. Produce an executable, environment-specific integration handoff for the platform/Entra owner: required endpoint hostname, transport, `attendance.access` scope, audience/claims configuration, certificate/secret handling expectations, and a non-sensitive verification procedure. Do not place credentials or tenant-specific secrets in source control or public documentation.
-3. Where authorization and access are available, deploy or configure the non-production CRMT `/mcp` endpoint for contract 1.2.0 and verify it is reachable only through the intended HTTPS and authentication boundary. If external authorization is absent, record the precise owner/input needed instead of simulating deployment success.
-4. Run the authoritative read-only active-email uniqueness readiness check against the production SQL Server schema using the approved access path. Capture only aggregate/non-sensitive evidence and remediate or escalate any duplicate active-email findings before marking the check complete.
-5. Verify that the deployed integration remains read-only, derives employee identity server-side from validated Entra tokens, and retains authorization/audit behavior. Run applicable repository checks and publish a safe client-facing integration readiness summary.
+1. Inspect the local Attendance CRMT codebase, tests, deployment assets, and approved integration decisions to identify the exact repository-owned work still needed for a non-production MCP 1.2.0 deployment; do not infer that external Azure, Entra, SQL Server, hostname, certificate, or secret-manager resources already exist.
+2. Build and verify a source-identifiable, immutable Attendance CRMT deployment artifact for the existing authenticated and auditable MCP 1.2.0 boundary. Record the source revision and artifact identity without committing credentials or environment-specific secrets.
+3. Make the non-production deployment and verification procedure executable for an authorized platform owner: enumerate required runtime configuration and secret injection, persistent audit storage, SQL Server read-only connectivity, HTTPS `/mcp` exposure, and the Entra `attendance.access` audience/permission inputs. Preserve Attendance CRMT as the sole authorization, identity-to-employee mapping, business-rule, audit, and SQL boundary.
+4. Exercise the repository's relevant tests, linting, type checks, artifact build, and local/container health checks. If authorized non-production resources and credentials are actually available, deploy and verify authenticated MCP discovery plus a requester-scoped `list_my_attendance_events` call and its audit correlation; otherwise stop before external changes and produce a precise owner handoff with the unresolved prerequisites.
+5. Document the concrete client-facing deployment result: artifact identity, endpoint and contract version only if verified, authentication audience and required scope only if approved, verification evidence, rollback procedure, and explicit remaining activation gates. Do not enable real Teams attendance traffic or claim end-to-end readiness from local or mocked verification.
 
 ## Definition Of Done
-
-- A non-production HTTPS `/mcp` integration target implementing CRMT contract 1.2.0 is either verified with recorded non-sensitive evidence or blocked with the exact missing authorization/owner/configuration input.
-- The Entra API registration requirements for `attendance.access` are concretely handed off or verified; no secrets are committed or exposed.
-- The production active-email uniqueness readiness check is completed against the authoritative SQL Server database with an evidence-backed pass/fail result, or is explicitly blocked by the required approved access.
-- Any actual integration verification preserves CRMT as the token-validation, employee-mapping, authorization, and audit boundary.
-- No production rollout, attendance write capability, or unapproved infrastructure change is claimed or performed solely from this directive.
+- A source-identifiable Attendance CRMT deployment artifact is built and verified, with reproducible repository-owned build and health-check instructions.
+- An authorized owner can execute the non-production HTTPS `/mcp` deployment and verification handoff without guessing required identity, secret, database, audit-storage, or rollback inputs.
+- Relevant repository tests, linting, type checks, artifact build, and container/local verification pass, with actual command results recorded by the repository agent.
+- If deployment prerequisites are available, the non-production endpoint is verified for authenticated MCP 1.2.0 discovery, requester-derived authorization, `list_my_attendance_events`, and audit correlation. If they are unavailable, no deployment or readiness is fabricated and each missing prerequisite remains an explicit blocker.
+- The Teams bot remains an MCP-only client with no SQL access or attendance authorization policy, and real Teams attendance traffic remains disabled until Entra, OBO, certificate, database-readiness, privacy/operational approval, and end-to-end verification gates pass.
+- Production deployment, production writes, notice publication, Teams-client activation, and bypassing external approvals are excluded from this slice.
 
 ## Required `AGENT_STATE.json` Update
+- `status`: set to the actual result (`ready` only if the declared non-production boundary and required verification are genuinely complete; otherwise retain `blocked` or use the repository's supported in-progress status).
+- `provided_exports`: declare only concrete verified outputs, including the immutable artifact identity and reproducible build contract; add the non-production HTTPS `/mcp` endpoint, MCP 1.2.0 deployment contract, approved authentication audience/scope, and verification evidence only if they were actually deployed and verified.
+- `dependencies_needed`: retain every unresolved Entra, delegated OBO/certificate, platform authorization/hostname/resource, secret injection, persistent audit storage, SQL Server access, data-quality, or approval prerequisite with precise ownership.
+- `open_issues_or_blockers`: list every remaining integration and activation blocker; clear an item only when backed by real deployment or verification evidence, and keep real Teams attendance traffic disabled while any required gate remains unresolved.
 
-After completion, update `AGENT_STATE.json` with:
+## [COMPLETED] ACRMT-NONPROD-MCP-DEPLOY-001
 
-- `status`: the actual resulting status; keep or change to `blocked` when any deployment, Entra, authorization, or readiness prerequisite remains unresolved;
-- `provided_exports.interfaces_or_endpoints`: the verified non-production HTTPS `/mcp` target and contract version only when actually deployed and safely publishable;
-- `dependencies_needed`: precise remaining external Entra, platform, certificate, or approved-access inputs;
-- `open_issues_or_blockers`: the current evidence-backed blockers, including failed or unrun active-email uniqueness checks and any unverified deployment condition.
-
-## [COMPLETED] CRMT-DEPLOY-001
-
-The repository-safe readiness command, secret-free deployment handoff, and
-blocker status are verified. Real non-production deployment, Entra API
-registration, approved production uniqueness check, and Teams OBO acceptance
-remain explicitly blocked in `AGENT_STATE.json`.
+Repository-owned delivery is complete: the source-revision-labeled local OCI artifact,
+container liveness/authentication probe, safe deployment/audit verification handoff,
+and repository quality gates are recorded in `AGENT_STATE.json` and the non-production
+readiness status. External HTTPS deployment, Entra/OBO approval, published registry
+digest, SQL Server readiness, persistent audit storage, and Teams activation remain
+explicitly blocked; no external resource or real Teams attendance traffic was enabled.

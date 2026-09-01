@@ -4,7 +4,10 @@
   "provided_exports": {
     "interfaces_or_endpoints": [
       "Attendance CRMT MCP contract 1.2.0 source: list_my_attendance_events(start_date, end_date, limit=50, offset=0) -> AttendanceEventPage; server-derived employee; inclusive max 31 days",
-      "Read-only aggregate active-email readiness command: attendance-crmt-check-active-emails"
+      "Public liveness contract: GET /health -> 200 {\"status\":\"ok\"}; liveness only, not database, Entra, or MCP readiness",
+      "Read-only aggregate active-email readiness command: attendance-crmt-check-active-emails",
+      "Safe non-production verifier commands: attendance-crmt-verify-deployment and attendance-crmt-verify-audit",
+      "Reproducible local OCI artifact: source revision 33f0a3c9d5b719aa84a831bb6402800302359fa3; local digest attendance-crmt@sha256:0f994f5344989ea96fa5ba2dae4fe20066601b0dc24505ee31820a31668e7a0b; OCI revision label verified equal to that source revision"
     ],
     "events": []
   },
@@ -15,7 +18,7 @@
     ],
     "deployment": [
       "Authorized platform owner, non-production HTTPS /mcp hostname, approved Container App resource boundary, runtime secret injection, and persistent audit storage",
-      "Published source-identifiable CRMT container image"
+      "CI-published source-identifiable CRMT container image digest; local-only image digest is not deployable registry evidence"
     ],
     "database": [
       "Approved non-production SQL Server read-only runtime access",
@@ -25,7 +28,8 @@
   "open_issues_or_blockers": [
     "No verified non-production HTTPS /mcp deployment implementing contract 1.2.0 exists.",
     "No verified Attendance CRMT Entra API registration exposing attendance.access exists.",
+    "No verified CI-published immutable registry digest exists for the reviewed source revision.",
     "Production active-email uniqueness readiness check has not run against the authoritative SQL Server database.",
-    "Real Teams attendance traffic remains disabled until Entra, OBO, certificate, deployed HTTPS MCP, production data-quality, and end-to-end requester/audit verification prerequisites pass."
+    "Real Teams attendance traffic remains disabled until Entra, OBO, certificate, deployed HTTPS MCP, runtime secret/database/audit prerequisites, production data-quality, and end-to-end requester/audit verification pass."
   ]
 }

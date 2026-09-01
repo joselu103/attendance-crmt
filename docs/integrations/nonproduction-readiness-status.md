@@ -1,71 +1,55 @@
 # Attendance CRMT Non-Production Integration Readiness Status
 
-**Checked:** 2026-08-31
+**Checked:** 2026-09-01
 
-**Overall status:** **Blocked** — Attendance CRMT contract 1.2.0 source is
-verified locally, but the required non-production HTTPS deployment, CRMT Entra
-API registration, and authoritative production active-email uniqueness result
-are not yet evidenced.
+**Overall status:** **Blocked** — repository-owned deployment artifact and local acceptance checks are verified, but no non-production HTTPS `/mcp` deployment, CRMT Entra API registration, approved SQL Server runtime access, or real requester/audit acceptance evidence exists.
 
-## Verified local evidence
+## Verified repository-local evidence
 
 | Check | Result |
 | --- | --- |
-| Contract implementation | MCP Streamable HTTP `/mcp`, contract `1.2.0`, authenticated production composition, requester-derived identity, read-only attendance tools, and audit middleware are present in the reviewed source. |
-| Lint | `ruff check .` passed during readiness planning. |
-| Format | `ruff format --check .` passed during readiness planning. |
-| Tests | `118 passed` after the readiness command and documentation changes. |
-| Container build | The local Docker image built successfully during readiness planning. |
-| Source publication | Not verified. The local branch was six commits ahead of `origin/main` when checked, so CI cannot yet have published this exact source revision. |
+| Source revision | `33f0a3c9d5b719aa84a831bb6402800302359fa3` (`Add Deployment Verification Handoff`) |
+| Local image identity | `attendance-crmt@sha256:0f994f5344989ea96fa5ba2dae4fe20066601b0dc24505ee31820a31668e7a0b` |
+| OCI source label | `org.opencontainers.image.revision=33f0a3c9d5b719aa84a831bb6402800302359fa3`, inspected after the local build |
+| Tests | `130 passed` via `env -u PYTHONPATH -u VIRTUAL_ENV uv run --all-groups python -m pytest -q` |
+| Lint and format | `ruff check .` passed; `ruff format --check .` reported `61 files already formatted` |
+| Compose validation | `docker compose config --quiet` passed |
+| Container liveness | A production-configured local container returned `GET /health` → `200 {"status":"ok"}` |
+| Public MCP boundary | The same local container returned unauthenticated `POST /mcp` → `401` with safe `AUTHENTICATION_REQUIRED` |
+| Verifier contracts | The deployment/audit verifier tests cover strict contract-version rejection, requester-scoped official-MCP-client calls, safe evidence serialization, and read-only audit lookup. |
 
-A local test/build result is not proof of an external deployment.
+The image digest is local-only evidence, not a published registry digest. GitHub Actions has not run for this source revision, and no GHCR pull/push identity has been verified. A local build/test result is not proof of an external deployment.
 
 ## Read-only Azure and Entra discovery
 
-Read-only discovery found the existing development Teams bot resources and its
-Entra application. It did not find either of the following CRMT prerequisites:
+No authorized Azure/Entra discovery or mutation was performed for this delivery. The following prerequisites remain unverified:
 
 | Required prerequisite | Result |
 | --- | --- |
-| Separate Attendance CRMT Container App with a public HTTPS `/mcp` endpoint | Not found / unverified. |
-| Attendance CRMT Entra API app registration exposing delegated `attendance.access` | Not found / unverified. |
+| Separate Attendance CRMT Container App with a public HTTPS `/mcp` endpoint | Not deployed / unverified |
+| Attendance CRMT Entra API app registration exposing delegated `attendance.access` | Not verified |
+| Teams bot delegated permission, OBO consent, and certificate configuration | Not verified |
+| Approved non-production SQL Server read-only runtime access | Not available to this repository task |
+| Persistent production audit volume and backup owner | Not verified |
 
-The actual endpoint hostname, resource owner, SQL target, runtime secret store,
-audit-volume design, and bot OBO certificate/consent evidence have not been
-provided to this repository. No cloud resource, Entra application, deployment,
-or public ingress was created or changed by this readiness work.
+No cloud resource, Entra application, deployment, public ingress, production database connection, credential, or Teams attendance flow was created or changed.
 
 ## Active-email production readiness gate
 
-**Status:** **Blocked — not run against production.**
+**Status:** **Blocked — not run against the authoritative production SQL Server database.**
 
-The repository now provides the read-only aggregate command
-`attendance-crmt-check-active-emails`. It must be run only with a
-database-owner-approved production read-only connection. Its result must be
-recorded as aggregate counts only. No production connection string, email,
-employee identifier, or duplicate row detail has been read or recorded here.
+`attendance-crmt-check-active-emails` remains an aggregate-only, read-only readiness command. It must be run with a database-owner-approved production read-only connection. No connection string, email, employee ID, duplicate-row detail, or production query result has been read or recorded here.
 
-Until it exits `0` with `ready: true`, production rollout remains blocked.
+## Required owner handoff
 
-## Remaining required inputs and owners
+1. **Repository owner:** push the reviewed source through CI and capture the GHCR immutable digest emitted by the container job; do not deploy `latest` alone.
+2. **Platform owner:** approve the Container App resource boundary, HTTPS hostname/DNS, secret injection, persistent `/app/data` audit mount, backup/retention owner, and rollback path.
+3. **Entra administrator:** create or verify the single-tenant CRMT API resource exposing `attendance.access`, then grant the bot delegated permission and required OBO consent.
+4. **Database owner:** provide approved non-production SQL Server read-only runtime access and authorize the production aggregate active-email uniqueness check and remediation escalation.
+5. **Teams bot/Entra owner:** provide the approved certificate configuration and conduct the mapped non-admin end-to-end test.
 
-1. **Platform owner:** approve the CRMT Azure resource boundary, runtime secret
-   injection, persistent audit mount/backup ownership, and HTTPS hostname/DNS.
-2. **Entra administrator:** create or verify the single-tenant CRMT API resource
-   with `attendance.access`, grant the bot delegated permission, and complete
-   required consent.
-3. **Repository owner:** authorize publication of the reviewed source/image and
-   capture the source-identifiable image digest.
-4. **Database owner:** provide approved non-production runtime access and approve
-   the production read-only aggregate identity check plus duplicate-remediation
-   escalation.
-5. **Teams bot/Entra owner:** provide approved OBO consent and production
-   certificate configuration, then perform the mapped non-admin end-to-end test.
+After the platform owner deploys the CI-produced digest, run `attendance-crmt-verify-deployment` against the approved HTTPS `/mcp` endpoint with the short-lived token injected outside the command. Use its emitted correlation UUID with `attendance-crmt-verify-audit` only against the authorized persistent audit volume. Record only the safe evidence; do not log tokens, claims, attendance events, employee identities, or audit request bodies.
 
 ## Activation rule
 
-Real Teams attendance traffic remains disabled until all of the following are
-verified: the CRMT API registration, deployed HTTPS `/mcp` endpoint, production
-active-email uniqueness pass, bot OBO/certificate/consent configuration, and
-requester-scoped end-to-end MCP/audit acceptance. The bot must continue to use
-only CRMT as the authorization, identity-mapping, audit, and SQL boundary.
+Real Teams attendance traffic remains disabled until all of the following are verified: deployed HTTPS `/mcp`, CRMT Entra API registration and approved delegated/OBO/certificate configuration, approved runtime secrets and SQL Server access, persistent audit storage, active-email readiness pass, and requester-scoped end-to-end MCP/audit acceptance. The Teams bot must remain an MCP-only client; Attendance CRMT remains the authorization, identity-mapping, business-rule, audit, and SQL boundary.
