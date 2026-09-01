@@ -42,7 +42,7 @@ jobs:
           uv run ruff format --check .
 
       - name: Test
-        run: uv run pytest
+        run: uv run python -m pytest
 
   container:
     name: Build and publish container image
@@ -77,11 +77,25 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Summarize container artifact
+        if: always()
+        run: |
+          {
+            echo "### Container artifact"
+            echo ""
+            echo "- Source revision: \`${{ github.sha }}\`"
+            echo "- Push state: \`${{ github.event_name == 'push' }}\`"
+            echo "- Build digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
