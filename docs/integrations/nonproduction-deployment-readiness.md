@@ -124,8 +124,13 @@ probe; `/mcp` remains the authenticated protocol boundary.
 
 1. Confirm every owner decision above and establish an approved spend/retention
    boundary before creating or reusing cloud resources.
-2. Push the reviewed commit through the normal CI path. Capture the registry
-   image digest and short source revision without publishing credentials.
+2. Push the reviewed commit through the normal CI path. Require its successful
+   published-artifact verification: CI pulls the exact
+   `ghcr.io/<owner>/attendance-crmt@sha256:<digest>` reference and confirms its
+   `org.opencontainers.image.revision` label equals the exact full source
+   revision. Capture that immutable reference and full revision from the CI
+   summary without publishing credentials; a detached build digest is not
+   deployment evidence.
 3. Create or verify the Entra CRMT API registration and the bot's
    `attendance.access` delegated permission/consent.
 4. Create the CRMT Container App sealed from public ingress first. Use a managed
@@ -258,8 +263,8 @@ If a deployment or acceptance check fails:
 1. Keep real Teams attendance traffic disabled.
 2. Disable public ingress or deactivate the failing revision through the
    approved platform owner; do not delete audit storage as a rollback shortcut.
-3. Retain the source revision, image digest, aggregate results, and safe failure
-   code needed for investigation.
+3. Retain the full source revision, registry-qualified immutable image reference,
+   aggregate results, and safe failure code needed for investigation.
 4. If Entra consent was granted incorrectly, the Entra owner revokes the bot's
    delegated permission; do not weaken audience/client/scope validation.
 5. Do not perform production database mutation, schema changes, credential
@@ -268,8 +273,11 @@ If a deployment or acceptance check fails:
 ## Evidence and coordination update
 
 After a real attempt, update `nonproduction-readiness-status.md` and
-`AGENT_STATE.json` with actual evidence only. A verified endpoint may be named
-only when it is safely publishable. Unrun production checks, missing consent,
-absent certificate/OBO configuration, unavailable SQL access, or no deployment
-owner remain explicit blockers. Contract-ready source code is not deployment-ready
-integration.
+`AGENT_STATE.json` with actual evidence only. Before naming an image as
+deployable, record CI's successful pull-and-label verification together with its
+full source revision and registry-qualified immutable image reference; a
+detached digest or local build alone is insufficient. A verified endpoint may be
+named only when it is safely publishable. Unrun production checks, missing
+consent, absent certificate/OBO configuration, unavailable SQL access, or no
+deployment owner remain explicit blockers. Contract-ready source code is not
+deployment-ready integration.

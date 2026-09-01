@@ -181,7 +181,11 @@ isolated session factories instead of relying on a shared `.env.test` file.
 GitHub Actions runs linting, formatting checks, tests, and a Docker image build
 for pull requests. Pushes to `main` additionally publish the image to GitHub
 Container Registry as `ghcr.io/<owner>/attendance-crmt:latest` and with a
-commit-SHA tag.
+commit-SHA tag. After publishing, CI pulls the exact registry-qualified
+`ghcr.io/<owner>/attendance-crmt@sha256:<digest>` reference and verifies that
+the pulled image's `org.opencontainers.image.revision` label equals the exact
+full Git source revision. The CI summary records only that source revision and
+immutable image reference; a build digest alone is not deployment evidence.
 
 ## Development
 

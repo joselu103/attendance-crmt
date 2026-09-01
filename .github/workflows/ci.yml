@@ -52,6 +52,20 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync production package
+        run: uv sync --locked --no-dev
+
       - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -89,13 +103,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Summarize container artifact
-        if: always()
+      - name: Verify published container artifact
+        if: github.event_name == 'push'
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          docker pull "$IMAGE"
+          uv run --no-sync attendance-crmt-verify-container-artifact \
+            --image "$IMAGE" \
+            --source-revision "$SOURCE_REVISION"
+
+      - name: Summarize verified container artifact
+        if: github.event_name == 'push' && success()
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          SOURCE_REVISION: ${{ github.sha }}
         run: |
           {
-            echo "### Container artifact"
+            echo "### Verified container artifact"
             echo ""
-            echo "- Source revision: \`${{ github.sha }}\`"
-            echo "- Push state: \`${{ github.event_name == 'push' }}\`"
-            echo "- Build digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- Source revision: \`$SOURCE_REVISION\`"
+            echo "- Registry image: \`$IMAGE\`"
           } >> "$GITHUB_STEP_SUMMARY"
