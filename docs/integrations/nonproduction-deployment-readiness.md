@@ -91,7 +91,7 @@ Configure a separate CRMT Container App with the following minimum properties:
 
 | Property | Required setting |
 | --- | --- |
-| Image | Reviewed SHA-tagged image and captured immutable digest; never `latest` alone |
+| Image | Reviewed SHA-tagged image with `org.opencontainers.image.revision` set to the source revision, plus captured immutable digest; never `latest` alone |
 | Ingress | External HTTPS only, targeting port `8000` |
 | Application environment | `ENVIRONMENT=production` |
 | Replicas | One replica maximum while audit storage uses SQLite |
@@ -116,9 +116,9 @@ ATTENDANCE_ENTRA_CLOCK_SKEW_SECONDS=60
 ATTENDANCE_ENTRA_ADMIN_ROLE=attendance.admin
 ```
 
-The app currently has no dedicated health route. Do not configure a liveness
-probe against the authenticated MCP endpoint without an explicit health-route
-slice, behavior-level test, and separate review.
+`GET /health` is a public liveness-only response and must not be treated as an
+MCP, database, Entra, or readiness check. Configure it only as an HTTP liveness
+probe; `/mcp` remains the authenticated protocol boundary.
 
 ## Safe deployment sequence
 
@@ -170,6 +170,45 @@ Expected outcome: HTTPS transport, HTTP `401`, safe
 `X-Attendance-MCP-Contract-Version: 1.2.0`. Inspect only the expected headers
 and safe body, then remove the temporary files. Never send a bearer token in a
 shell command or retain it in shell history.
+
+The installed verifier performs the same public check first, then reads its
+short-lived requester token only from the process environment (there is no
+`--token` option). Use non-secret placeholders in the command itself:
+
+```bash
+env -u PYTHONPATH .venv/bin/attendance-crmt-verify-deployment \
+  --endpoint 'https://<approved-https-host>/mcp' \
+  --start-date 2026-08-01 \
+  --end-date 2026-08-31
+```
+
+With no `ATTENDANCE_MCP_VERIFICATION_TOKEN`, it prints public safe evidence plus
+`"authenticated_stage":"blocked"` to standard error and exits `2`. Inject an
+approved short-lived token outside the shell command to enable the authenticated
+stage. The stage uses exactly one generated UUID correlation ID, checks the
+compatible contract header before its MCP tool call, and calls only
+`list_my_attendance_events` with `start_date`, `end_date`, `limit=50`, and
+`offset=0`; it never supplies employee, actor, email, role, or other identity
+selectors. It emits no attendance items, token, claims, or identity data.
+
+Deployment-verifier exit codes are: `0` for successful public and authenticated
+verification, `1` for public validation, transport, or contract failure, `2` for
+a missing token after public success, and `3` for authenticated MCP failure after
+public success.
+
+After the authenticated attempt, query the **authorized persistent audit volume
+only** with that one correlation UUID:
+
+```bash
+env -u PYTHONPATH .venv/bin/attendance-crmt-verify-audit \
+  --audit-database-path /app/data/audit.sqlite3 \
+  --correlation-id <verifier-correlation-uuid>
+```
+
+This command returns only `found`, `tool_name`, `outcome`, and `error_code`; it
+never prints actor, employee, role, request, or audit-row details. Exit `0`
+means a matching requester-scoped audit event was found, `2` means it was not
+found, and `1` means the local audit store was unavailable.
 
 The approved Teams bot/OBO test must then prove initialization, compatible
 contract major version, an employee-scoped `list_my_attendance_events` call,

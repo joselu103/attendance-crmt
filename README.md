@@ -104,7 +104,31 @@ HTTPS deployment are in
 [`docs/integrations/nonproduction-deployment-readiness.md`](docs/integrations/nonproduction-deployment-readiness.md).
 Its aggregate production active-email uniqueness check is available as
 `attendance-crmt-check-active-emails`; run it only through an approved read-only
-production access path.
+production access path. The safe non-production acceptance checkers are
+`attendance-crmt-verify-deployment` and `attendance-crmt-verify-audit`:
+
+```bash
+env -u PYTHONPATH .venv/bin/attendance-crmt-verify-deployment \
+  --endpoint 'https://<approved-https-host>/mcp' \
+  --start-date 2026-08-01 \
+  --end-date 2026-08-31
+
+# Use only against the authorized persistent audit volume and the UUID emitted above.
+env -u PYTHONPATH .venv/bin/attendance-crmt-verify-audit \
+  --audit-database-path /app/data/audit.sqlite3 \
+  --correlation-id <verifier-correlation-uuid>
+```
+
+The deployment checker has no `--token` flag: it reads
+`ATTENDANCE_MCP_VERIFICATION_TOKEN` only from its process environment after a
+successful unauthenticated public check. Without that variable it safely reports
+a blocked authenticated stage to standard error and exits `2`; it never outputs
+the token, attendance events, claims, or requester identity. The audit checker
+emits only found/tool/outcome/error-code evidence.
+Deployment-verifier exit codes are: `0` for successful public and authenticated
+verification, `1` for public validation, transport, or contract failure, `2` for
+a missing token after public success, and `3` for authenticated MCP failure after
+public success.
 Its first requester-scoped operation is `list_my_attendance_events` over MCP
 Streamable HTTP at `/mcp`.
 
