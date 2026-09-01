@@ -95,10 +95,13 @@ def test_official_sdk_uses_real_attendance_tools_with_requester_authorization(
     )
     server = create_server(dependencies)
     app = create_http_app(server)
+    lifespan_app = app
+    while hasattr(lifespan_app, "_app"):
+        lifespan_app = lifespan_app._app
 
     async def exercise_server() -> tuple[set[str], Any, Any]:
         async with (
-            app._app.router.lifespan_context(app._app),
+            lifespan_app.router.lifespan_context(lifespan_app),
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://test",

@@ -17,6 +17,7 @@ ATTENDANCE_MCP_CONTRACT_VERSION = "1.2.0"
 CONTRACT_VERSION_HEADER = "X-Attendance-MCP-Contract-Version"
 CORRELATION_ID_HEADER = "X-Correlation-ID"
 MCP_PATH = "/mcp"
+HEALTH_PATH = "/health"
 
 _current_correlation_id: ContextVar[UUID | None] = ContextVar(
     "attendance_correlation_id",
@@ -50,6 +51,35 @@ class ContractVersionHeaderMiddleware:
             await send(message)
 
         await self._app(scope, receive, send_with_contract_version)
+
+
+class HealthCheckMiddleware:
+    """Return a fixed public liveness response without touching dependencies."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] == "http"
+            and scope["path"] == HEALTH_PATH
+            and scope["method"] == "GET"
+        ):
+            body = b'{"status":"ok"}'
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode("ascii")),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        await self._app(scope, receive, send)
 
 
 class CorrelationIdMiddleware:

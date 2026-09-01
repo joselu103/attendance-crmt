@@ -10,7 +10,10 @@ from attendance_crmt.dependencies import (
     ServerDependencies,
     create_production_dependencies,
 )
-from attendance_crmt.http_contract import ContractVersionHeaderMiddleware
+from attendance_crmt.http_contract import (
+    ContractVersionHeaderMiddleware,
+    HealthCheckMiddleware,
+)
 from attendance_crmt.observability import configure_structlog
 from attendance_crmt.settings import Settings, get_settings
 
@@ -51,13 +54,15 @@ def create_production_server(settings: Settings | None = None) -> FastMCP:
 
 
 def create_http_app(server: FastMCP) -> ASGIApp:
-    """Wrap FastMCP's protected HTTP app with Attendance response headers."""
-    return ContractVersionHeaderMiddleware(
-        server.http_app(
-            path="/mcp",
-            stateless_http=True,
-            json_response=True,
-            host_origin_protection=True,
+    """Compose public liveness outside the protected MCP HTTP application."""
+    return HealthCheckMiddleware(
+        ContractVersionHeaderMiddleware(
+            server.http_app(
+                path="/mcp",
+                stateless_http=True,
+                json_response=True,
+                host_origin_protection=True,
+            )
         )
     )
 

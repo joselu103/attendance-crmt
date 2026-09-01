@@ -48,7 +48,13 @@ def _mcp_app():
     def current_correlation_id() -> str:
         return str(get_current_correlation_id())
 
-    return server.http_app(path="/mcp", stateless_http=True, json_response=True)
+    return create_http_app(server)
+
+
+def _lifespan_app(app: Any) -> Any:
+    while hasattr(app, "_app"):
+        app = app._app
+    return app
 
 
 def _post_mcp(
@@ -57,7 +63,7 @@ def _post_mcp(
     body: dict[str, Any] | None = None,
 ) -> httpx.Response:
     async def request() -> httpx.Response:
-        inner_app = getattr(app, "_app", app)
+        inner_app = _lifespan_app(app)
         async with (
             inner_app.router.lifespan_context(inner_app),
             httpx.AsyncClient(
@@ -77,8 +83,40 @@ def _post_mcp(
     return asyncio.run(request())
 
 
+def _get(app: Any, path: str) -> httpx.Response:
+    async def request() -> httpx.Response:
+        inner_app = _lifespan_app(app)
+        async with (
+            inner_app.router.lifespan_context(inner_app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+            ) as client,
+        ):
+            return await client.get(path)
+
+    return asyncio.run(request())
+
+
 def _assert_contract_version(response: httpx.Response) -> None:
     assert response.headers[CONTRACT_VERSION_HEADER] == ATTENDANCE_MCP_CONTRACT_VERSION
+
+
+def test_health_check_is_public_and_minimal() -> None:
+    response = _get(_mcp_app(), "/health")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert response.json() == {"status": "ok"}
+
+
+def test_health_check_does_not_change_mcp_authentication() -> None:
+    health = _get(_mcp_app(), "/health")
+    mcp = _post_mcp(_mcp_app())
+
+    assert health.status_code == 200
+    assert mcp.status_code == 401
+    assert mcp.json()["code"] == "AUTHENTICATION_REQUIRED"
 
 
 def test_published_contract_version_is_1_2_0() -> None:
@@ -198,10 +236,11 @@ def test_authenticated_request_propagates_normalized_correlation_id_to_tool() ->
 
 def test_official_streamable_http_client_calls_authenticated_tool() -> None:
     app = _mcp_app()
+    inner_app = _lifespan_app(app)
 
     async def call_tool() -> str:
         async with (
-            app.router.lifespan_context(app),
+            inner_app.router.lifespan_context(inner_app),
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://test",
