@@ -23,6 +23,7 @@ attendance-crmt = "attendance_crmt:main"
 attendance-crmt-check-active-emails = "attendance_crmt.readiness:main"
 attendance-crmt-verify-deployment = "attendance_crmt.deployment_verification:main"
 attendance-crmt-verify-audit = "attendance_crmt.deployment_verification:audit_main"
+attendance-crmt-verify-container-artifact = "attendance_crmt.container_artifact_verification:main"
 
 [build-system]
 requires = ["uv_build>=0.9.16,<0.10.0"]
