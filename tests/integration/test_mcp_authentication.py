@@ -16,6 +16,7 @@ from jwt import PyJWKClient
 from jwt.algorithms import RSAAlgorithm
 from pydantic import AnyHttpUrl
 from starlette.middleware import Middleware
+from structlog.testing import capture_logs
 
 from attendance_crmt.authentication import (
     AuthenticationErrorContractMiddleware,
@@ -262,6 +263,28 @@ def test_token_infrastructure_failure_log_omits_exception_details(caplog) -> Non
     assert record.getMessage() == "Entra token validation infrastructure failed"
     assert record.exc_info is None
     assert "sensitive diagnostic sentinel" not in caplog.text
+
+
+def test_token_rejection_log_classifies_failure_without_token_contents() -> None:
+    settings = _authentication_settings()
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    verifier = _verifier(settings, lambda: {"keys": [_jwk(private_key, kid="key-1")]})
+    token = _signed_token(
+        private_key, settings, overrides={"aud": "api://wrong-resource"}
+    )
+
+    with capture_logs() as logs:
+        assert asyncio.run(verifier.verify_token(token)) is None
+
+    assert logs == [
+        {
+            "event": "entra_token_rejected",
+            "log_level": "info",
+            "reason": "token_validation_failed",
+            "error_type": "InvalidAudienceError",
+        }
+    ]
+    assert token not in repr(logs)
 
 
 @pytest.mark.parametrize(

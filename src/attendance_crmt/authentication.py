@@ -25,6 +25,7 @@ from attendance_crmt.http_contract import (
     ContractVersionHeaderMiddleware,
     CorrelationIdMiddleware,
 )
+from attendance_crmt.observability import get_logger
 from attendance_crmt.security_errors import (
     AUTHENTICATION_REQUIRED_MESSAGE,
     TOKEN_INVALID_MESSAGE,
@@ -33,6 +34,7 @@ from attendance_crmt.security_errors import (
 from attendance_crmt.settings import EntraMcpAuthenticationSettings
 
 logger = logging.getLogger(__name__)
+security_logger = get_logger(__name__)
 
 
 def build_attendance_mcp_middleware(
@@ -185,13 +187,33 @@ class EntraTokenVerifier(TokenVerifier):
                 },
             )
             if decoded.get("aud") != self._settings.audience:
+                security_logger.info(
+                    "entra_token_rejected",
+                    reason="audience_mismatch",
+                    error_type=None,
+                )
                 return None
             claims = EntraDelegatedClaims.model_validate(decoded)
             if claims.tid != self._settings.tenant_id:
+                security_logger.info(
+                    "entra_token_rejected",
+                    reason="tenant_mismatch",
+                    error_type=None,
+                )
                 return None
             if claims.client_id not in self._settings.allowed_client_ids:
+                security_logger.info(
+                    "entra_token_rejected",
+                    reason="client_not_allowed",
+                    error_type=None,
+                )
                 return None
             if self._settings.required_scope not in claims.scopes:
+                security_logger.info(
+                    "entra_token_rejected",
+                    reason="scope_missing",
+                    error_type=None,
+                )
                 return None
             return AccessToken(
                 token=token,
@@ -202,18 +224,48 @@ class EntraTokenVerifier(TokenVerifier):
                 subject=f"{claims.tid}:{claims.oid}",
                 claims=decoded,
             )
-        except (
-            InvalidTokenError,
-            PyJWKClientError,
-            ValidationError,
-            httpx.HTTPError,
-            ValueError,
-            TimeoutError,
-        ):
-            logger.info("Entra access token validation rejected")
+        except InvalidTokenError as error:
+            security_logger.info(
+                "entra_token_rejected",
+                reason="token_validation_failed",
+                error_type=type(error).__name__,
+            )
             return None
-        except Exception:  # noqa: BLE001
+        except ValidationError as error:
+            security_logger.info(
+                "entra_token_rejected",
+                reason="claim_contract_invalid",
+                error_type=type(error).__name__,
+            )
+            return None
+        except PyJWKClientError as error:
+            security_logger.error(
+                "entra_token_validation_unavailable",
+                reason="signing_key_unavailable",
+                error_type=type(error).__name__,
+            )
+            return None
+        except (httpx.HTTPError, TimeoutError) as error:
+            security_logger.error(
+                "entra_token_validation_unavailable",
+                reason="identity_metadata_unavailable",
+                error_type=type(error).__name__,
+            )
+            return None
+        except ValueError as error:
+            security_logger.error(
+                "entra_token_validation_unavailable",
+                reason="identity_configuration_invalid",
+                error_type=type(error).__name__,
+            )
+            return None
+        except Exception as error:  # noqa: BLE001
             logger.error("Entra token validation infrastructure failed")
+            security_logger.error(
+                "entra_token_validation_unavailable",
+                reason="unexpected_failure",
+                error_type=type(error).__name__,
+            )
             return None
 
     async def _get_jwk_client(self) -> PyJWKClient:
