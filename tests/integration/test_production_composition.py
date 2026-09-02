@@ -19,13 +19,17 @@ def _production_test_settings(monkeypatch, tmp_path) -> Settings:
         "ATTENDANCE_AUDIT_DATABASE_PATH",
         str(tmp_path / "production-audit.sqlite3"),
     )
-    return Settings()  # type: ignore[call-arg]
+    return Settings(_env_file=None)
 
 
 def test_production_dependencies_use_authenticated_requester(
     monkeypatch,
     tmp_path,
 ) -> None:
+    monkeypatch.setenv(
+        "ATTENDANCE_ENTRA_EMAIL_ALIASES",
+        '{"entra-upn@example.onmicrosoft.com":"employee@example.com"}',
+    )
     settings = _production_test_settings(monkeypatch, tmp_path)
 
     dependencies = create_production_dependencies(settings)
@@ -35,6 +39,9 @@ def test_production_dependencies_use_authenticated_requester(
         AuthenticatedTokenRequesterResolver,
     )
     assert isinstance(dependencies.auth_provider, EntraTokenVerifier)
+    assert dependencies.requester_resolver.email_aliases == {
+        "entra-upn@example.onmicrosoft.com": "employee@example.com"
+    }
 
     server = create_server(dependencies, settings=settings)
 

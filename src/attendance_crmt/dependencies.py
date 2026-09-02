@@ -48,6 +48,7 @@ def create_production_dependencies(settings: Settings) -> ServerDependencies:
         requester_resolver=AuthenticatedTokenRequesterResolver(
             session_factory=attendance_session_factory,
             admin_role=settings.entra_admin_role,
+            email_aliases=settings.entra_email_aliases,
         ),
         auth_provider=EntraTokenVerifier(settings.entra_mcp_authentication),
     )

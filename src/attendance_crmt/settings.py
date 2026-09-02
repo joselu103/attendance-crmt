@@ -27,6 +27,7 @@ ENTRA_ALLOWED_CLIENT_IDS_ENV = "ATTENDANCE_ENTRA_ALLOWED_CLIENT_IDS"
 ENTRA_REQUIRED_SCOPE_ENV = "ATTENDANCE_ENTRA_REQUIRED_SCOPE"
 ENTRA_CLOCK_SKEW_SECONDS_ENV = "ATTENDANCE_ENTRA_CLOCK_SKEW_SECONDS"
 ENTRA_ADMIN_ROLE_ENV = "ATTENDANCE_ENTRA_ADMIN_ROLE"
+ENTRA_EMAIL_ALIASES_ENV = "ATTENDANCE_ENTRA_EMAIL_ALIASES"
 
 NonBlankStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -89,6 +90,10 @@ class Settings(BaseSettings):
         default="attendance.admin",
         validation_alias=ENTRA_ADMIN_ROLE_ENV,
     )
+    entra_email_aliases: dict[str, str] = Field(
+        default_factory=dict,
+        validation_alias=ENTRA_EMAIL_ALIASES_ENV,
+    )
 
     @field_validator("entra_allowed_client_ids")
     @classmethod
@@ -97,6 +102,26 @@ class Settings(BaseSettings):
         if not value:
             raise ValueError("at least one allowed client ID is required")
         return value
+
+    @field_validator("entra_email_aliases")
+    @classmethod
+    def normalize_entra_email_aliases(cls, value: dict[str, str]) -> dict[str, str]:
+        """Normalize explicit, operator-configured Entra-to-email aliases."""
+        aliases: dict[str, str] = {}
+        for source, target in value.items():
+            normalized_source = source.strip().lower()
+            normalized_target = target.strip().lower()
+            if not normalized_source or not normalized_target:
+                raise ValueError("Entra email aliases must not contain blank values")
+            if (
+                normalized_source in aliases
+                and aliases[normalized_source] != normalized_target
+            ):
+                raise ValueError(
+                    "Entra email aliases must not conflict after normalization"
+                )
+            aliases[normalized_source] = normalized_target
+        return aliases
 
     @model_validator(mode="after")
     def validate_authentication_urls(self) -> Settings:

@@ -32,6 +32,22 @@ def test_settings_reject_empty_allowed_client_ids(monkeypatch) -> None:
         Settings(_env_file=None)
 
 
+def test_settings_normalize_explicit_entra_email_aliases(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "ATTENDANCE_ENTRA_EMAIL_ALIASES",
+        '{" JoseLuisCambil@AttendanceCRMTDevelopment.onmicrosoft.com ": '
+        '" JoseLuisCC103@gmail.com "}',
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.entra_email_aliases == {
+        "joseluiscambil@attendancecrmtdevelopment.onmicrosoft.com": (
+            "joseluiscc103@gmail.com"
+        )
+    }
+
+
 @pytest.mark.parametrize(
     "name,value",
     [

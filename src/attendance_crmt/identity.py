@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -92,6 +92,7 @@ class AuthenticatedTokenRequesterResolver:
 
     session_factory: sessionmaker[Session]
     admin_role: str
+    email_aliases: Mapping[str, str] = field(default_factory=dict)
     access_token_provider: Callable[[], AccessToken | None] = get_access_token
 
     def resolve(self, context: Any) -> Requester:
@@ -112,12 +113,13 @@ class AuthenticatedTokenRequesterResolver:
         email = raw_email.strip().lower()
         if not email:
             raise self._token_invalid_error()
+        mapped_email = self.email_aliases.get(email, email)
         actor_id = f"{tenant_id}:{object_id}"
 
         try:
             employee_id = resolve_active_employee_id_for_email(
                 session_factory=self.session_factory,
-                email=email,
+                email=mapped_email,
             )
         except EmailIdentityUnmappedError:
             raise self._identity_error(

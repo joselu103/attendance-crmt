@@ -132,6 +132,37 @@ def test_authenticated_requester_maps_validated_claims_to_active_employee(
     assert requester.roles == frozenset({"employee", "admin"})
 
 
+def test_authenticated_requester_maps_configured_entra_email_alias_to_employee(
+    employee_session_factory,
+    employee_factory,
+) -> None:
+    employee = employee_factory.build(
+        izvajalec_id=42,
+        email="joseluiscc103@gmail.com",
+        active=1,
+    )
+    with employee_session_factory() as session:
+        session.add(employee)
+        session.commit()
+    resolver = AuthenticatedTokenRequesterResolver(
+        session_factory=employee_session_factory,
+        admin_role="attendance.admin",
+        email_aliases={
+            "joseluiscambil@attendancecrmtdevelopment.onmicrosoft.com": (
+                "joseluiscc103@gmail.com"
+            )
+        },
+        access_token_provider=lambda: _access_token(
+            email="JoseLuisCambil@AttendanceCRMTDevelopment.onmicrosoft.com"
+        ),
+    )
+
+    requester = resolver.resolve(context=None)
+
+    assert requester.employee_id == 42
+    assert requester.roles == frozenset({"employee"})
+
+
 @pytest.mark.parametrize("roles", [["Attendance.Admin"], "attendance.admin"])
 def test_authenticated_requester_does_not_trust_malformed_or_similar_admin_role(
     employee_session_factory,
