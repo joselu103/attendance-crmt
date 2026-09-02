@@ -227,6 +227,14 @@ It is intentionally conservative:
 - the server must not fall back to `username`, `domain_username`, the existing
   ASP.NET `UserId`, or fuzzy matching.
 
+For a strictly temporary non-production bridge, the authorized CRMT operator
+may configure explicit normalized `preferred_username` to canonical-email
+aliases through `ATTENDANCE_ENTRA_EMAIL_ALIASES`. This is a server-side,
+post-token-validation mapping only: it does not alter the signed actor ID or
+roles, and the canonical email must still uniquely resolve to an active
+employee. It must be removed after testing and is not a production identity
+model.
+
 The current development database has 62 active employees with a usable email
 address and three duplicate normalized active email addresses. Those duplicate
 addresses cannot authenticate until an administrator resolves them in the

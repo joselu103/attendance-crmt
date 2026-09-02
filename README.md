@@ -79,6 +79,7 @@ ignored `.env` copied from `.env.example`):
 | `ATTENDANCE_ENTRA_REQUIRED_SCOPE` | Delegated scope; defaults to `attendance.access`. |
 | `ATTENDANCE_ENTRA_CLOCK_SKEW_SECONDS` | Temporal-claim leeway from 0 to 300; defaults to 60. |
 | `ATTENDANCE_ENTRA_ADMIN_ROLE` | Exact Entra app role that grants `admin`; defaults to `attendance.admin`. |
+| `ATTENDANCE_ENTRA_EMAIL_ALIASES` | Optional JSON object of temporary, explicit Entra `preferred_username` aliases to canonical active employee emails. |
 
 The server accepts only RS256-signed delegated tokens discovered through the
 configured tenant metadata. It requires the configured tenant, issuer, exact
@@ -94,6 +95,15 @@ receives `employee`; only the exact configured Entra app role adds `admin`.
 Unmapped and duplicate mappings return `IDENTITY_UNMAPPED` and
 `IDENTITY_AMBIGUOUS` respectively. Tests use explicitly injected static fake
 requesters; production does not.
+
+For a short-lived non-production bridge where an Entra UPN cannot be stored in
+the existing `email varchar(50)` column, an authorized operator may set
+`ATTENDANCE_ENTRA_EMAIL_ALIASES` to a JSON object such as
+`{"entra-upn@example.onmicrosoft.com":"existing-employee@example.com"}`.
+The alias is consulted only after token validation, preserves the token-derived
+actor ID and roles, and still requires the target email to resolve to exactly
+one active employee. Remove the configuration and restart the service to undo
+the bridge; do not use it for production identity design.
 
 ## Teams bot MCP client contract
 
