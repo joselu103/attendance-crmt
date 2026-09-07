@@ -9,6 +9,7 @@ import pytest
 from fastapi import Depends
 from fastmcp.server.auth import AccessToken
 
+from attendance_crmt.audit import AuditEvent
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver, Principal
 from attendance_crmt.rest import create_app, get_principal
 
@@ -52,6 +53,7 @@ def _access_token() -> AccessToken:
 def test_rest_and_mcp_adapters_resolve_the_same_immutable_principal(
     server_dependencies,
     employee_factory,
+    audit_session_factory,
 ) -> None:
     employee = employee_factory.build(izvajalec_id=42, email="person@example.com")
     with server_dependencies.attendance_session_factory() as session:
@@ -88,7 +90,10 @@ def test_rest_and_mcp_adapters_resolve_the_same_immutable_principal(
     response = _get(
         app,
         "/principal",
-        headers=[("Authorization", "Bearer delegated-token")],
+        headers=[
+            ("Authorization", "Bearer delegated-token"),
+            ("X-Correlation-ID", "11111111-1111-1111-1111-111111111111"),
+        ],
     )
 
     assert response.status_code == 200
@@ -103,6 +108,11 @@ def test_rest_and_mcp_adapters_resolve_the_same_immutable_principal(
     assert resolver.resolve(context=None) == resolver.resolve_access_token(access_token)
     with pytest.raises(FrozenInstanceError):
         resolver.resolve_access_token(access_token).employee_id = 99  # type: ignore[misc]
+    with audit_session_factory() as session:
+        events = session.query(AuditEvent).all()
+    assert len(events) == 1
+    assert events[0].tool_name == "rest:/principal"
+    assert events[0].outcome == "success"
 
 
 def test_rest_principal_dependency_rejects_duplicate_authorization_headers(
@@ -116,14 +126,17 @@ def test_rest_principal_dependency_rejects_duplicate_authorization_headers(
     ) -> dict[str, str]:
         return {"actor_id": principal.actor_id}
 
-    with pytest.raises(Exception) as error:
-        _get(
-            app,
-            "/principal",
-            headers=[
-                ("Authorization", "Bearer delegated-token"),
-                ("Authorization", "Bearer another-token"),
-            ],
-        )
+    response = _get(
+        app,
+        "/principal",
+        headers=[
+            ("Authorization", "Bearer delegated-token"),
+            ("Authorization", "Bearer another-token"),
+        ],
+    )
 
-    assert getattr(error.value, "code", None) == "TOKEN_INVALID"
+    assert response.status_code == 401
+    assert response.json() == {
+        "code": "TOKEN_INVALID",
+        "message": "Your sign-in could not be verified. Please try again.",
+    }

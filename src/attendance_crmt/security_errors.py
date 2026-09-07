@@ -24,6 +24,7 @@ BACKEND_UNAVAILABLE_MESSAGE = (
     "Attendance is temporarily unavailable. Please try again shortly."
 )
 INTERNAL_ERROR_MESSAGE = "Attendance could not complete that request."
+NOT_FOUND_MESSAGE = "The requested attendance resource was not found."
 
 SecurityErrorCode = Literal[
     "AUTHENTICATION_REQUIRED",
@@ -35,6 +36,7 @@ SecurityErrorCode = Literal[
     "FORBIDDEN",
     "BACKEND_UNAVAILABLE",
     "INTERNAL_ERROR",
+    "NOT_FOUND",
 ]
 
 SECURITY_ERROR_MESSAGES: dict[SecurityErrorCode, str] = {
@@ -47,6 +49,20 @@ SECURITY_ERROR_MESSAGES: dict[SecurityErrorCode, str] = {
     "FORBIDDEN": FORBIDDEN_MESSAGE,
     "BACKEND_UNAVAILABLE": BACKEND_UNAVAILABLE_MESSAGE,
     "INTERNAL_ERROR": INTERNAL_ERROR_MESSAGE,
+    "NOT_FOUND": NOT_FOUND_MESSAGE,
+}
+
+SECURITY_ERROR_STATUS_CODES: dict[SecurityErrorCode, int] = {
+    "AUTHENTICATION_REQUIRED": 401,
+    "TOKEN_INVALID": 401,
+    "CORRELATION_ID_INVALID": 400,
+    "INVALID_ARGUMENT": 400,
+    "IDENTITY_UNMAPPED": 403,
+    "IDENTITY_AMBIGUOUS": 403,
+    "FORBIDDEN": 403,
+    "BACKEND_UNAVAILABLE": 503,
+    "INTERNAL_ERROR": 500,
+    "NOT_FOUND": 404,
 }
 
 

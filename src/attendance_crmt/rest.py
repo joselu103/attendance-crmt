@@ -1,13 +1,35 @@
-"""FastAPI REST application composition and protected-route identity seam."""
+"""FastAPI REST composition, protected operation, and safe error seams."""
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from inspect import isawaitable
+from time import perf_counter
+from typing import Annotated, TypeVar
+from uuid import UUID
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastmcp.server.auth import AccessToken
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException
+from starlette.responses import JSONResponse, Response
 
 from attendance_crmt.dependencies import ServerDependencies
+from attendance_crmt.http_contract import CORRELATION_ID_HEADER
 from attendance_crmt.identity import Principal
-from attendance_crmt.security_errors import SecurityFailure
+from attendance_crmt.security_errors import (
+    SECURITY_ERROR_MESSAGES,
+    SECURITY_ERROR_STATUS_CODES,
+    SecurityErrorCode,
+    SecurityErrorResponse,
+    SecurityFailure,
+)
+
+Result = TypeVar("Result")
+
+REST_CONTRACT_VERSION = "1.0.0"
+REST_CONTRACT_VERSION_HEADER = "X-Attendance-API-Contract-Version"
 
 
 def _bearer_token(request: Request) -> str:
@@ -26,6 +48,7 @@ def _bearer_token(request: Request) -> str:
 
 async def get_principal(request: Request) -> Principal:
     """FastAPI dependency that verifies a bearer and derives one Principal."""
+    request.state.protected_route = True
     dependencies: ServerDependencies | None = request.app.state.dependencies
     if dependencies is None or dependencies.auth_provider is None:
         raise SecurityFailure(code="TOKEN_INVALID")
@@ -36,13 +59,246 @@ async def get_principal(request: Request) -> Principal:
         dependencies.auth_provider.verify_token
     )
     access_token = await verifier(_bearer_token(request))
-    return dependencies.principal_resolver.resolve_access_token(access_token)
+    principal = dependencies.principal_resolver.resolve_access_token(access_token)
+    request.state.protected_operation = ProtectedOperation(
+        dependencies=dependencies,
+        principal=principal,
+        correlation_id=_correlation_id(request),
+        request=request,
+    )
+    return principal
+
+
+def _correlation_id(request: Request) -> UUID:
+    values = request.headers.getlist(CORRELATION_ID_HEADER)
+    if len(values) != 1:
+        raise SecurityFailure(code="CORRELATION_ID_INVALID")
+    try:
+        return UUID(values[0])
+    except ValueError:
+        raise SecurityFailure(code="CORRELATION_ID_INVALID") from None
+
+
+def _failure_code(error: Exception) -> SecurityErrorCode:
+    if isinstance(error, HTTPException):
+        return _http_failure_code(error)
+    if isinstance(error, SecurityFailure):
+        return error.code
+    if isinstance(error, PermissionError):
+        return "FORBIDDEN"
+    if isinstance(error, SQLAlchemyError):
+        return "BACKEND_UNAVAILABLE"
+    return "INTERNAL_ERROR"
+
+
+def _http_failure_code(error: HTTPException) -> SecurityErrorCode:
+    return {
+        400: "INVALID_ARGUMENT",
+        401: "TOKEN_INVALID",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        503: "BACKEND_UNAVAILABLE",
+    }.get(error.status_code, "INTERNAL_ERROR")
+
+
+class RestOperationFailure(Exception):
+    """Private signal that an operation must return a fixed safe REST error."""
+
+    def __init__(self, code: SecurityErrorCode) -> None:
+        self.code = code
+
+
+@dataclass(frozen=True)
+class ProtectedOperation:
+    """Execute exactly one resolved REST operation with mandatory auditing."""
+
+    dependencies: ServerDependencies
+    principal: Principal
+    correlation_id: UUID
+    request: Request
+
+    async def execute(
+        self,
+        *,
+        name: str,
+        action: Callable[[], Result | Awaitable[Result]],
+    ) -> Response:
+        """Run an operation, then durably record its one safe outcome."""
+        started_at = perf_counter()
+        try:
+            result = action()
+            if isawaitable(result):
+                result = await result
+            response = JSONResponse(content=jsonable_encoder(result))
+        except Exception as error:  # noqa: BLE001
+            code = _failure_code(error)
+            await self._record_or_raise(
+                name=name,
+                outcome="failure",
+                error_code=code,
+                started_at=started_at,
+            )
+            raise RestOperationFailure(code) from None
+
+        await self._record_or_raise(
+            name=name,
+            outcome="success",
+            error_code=None,
+            started_at=started_at,
+        )
+        return response
+
+    async def record_failure(self, *, name: str, code: SecurityErrorCode) -> None:
+        """Persist a fixed failure without retaining rejected input."""
+        await self._record_or_raise(
+            name=name,
+            outcome="failure",
+            error_code=code,
+            started_at=perf_counter(),
+        )
+
+    async def record_success_if_needed(self, *, name: str) -> None:
+        """Durably record a direct protected-route success exactly once."""
+        if getattr(self.request.state, "audit_recorded", False):
+            return
+        await self._record_or_raise(
+            name=name,
+            outcome="success",
+            error_code=None,
+            started_at=perf_counter(),
+        )
+
+    async def _record_or_raise(
+        self,
+        *,
+        name: str,
+        outcome: str,
+        error_code: SecurityErrorCode | None,
+        started_at: float,
+    ) -> None:
+        try:
+            audit_log = self.dependencies.audit_log
+            audit_log.record(
+                actor_id=self.principal.actor_id,
+                employee_id=self.principal.employee_id,
+                roles=self.principal.roles,
+                correlation_id=self.correlation_id,
+                tool_name=name,
+                request={},
+                outcome=outcome,
+                error_code=error_code,
+                duration_ms=round((perf_counter() - started_at) * 1000),
+            )
+            self.request.state.audit_recorded = True
+        except Exception:  # noqa: BLE001
+            raise RestOperationFailure("BACKEND_UNAVAILABLE") from None
+
+
+async def get_protected_operation(
+    request: Request, principal: Annotated[Principal, Depends(get_principal)]
+) -> ProtectedOperation:
+    """Resolve one authenticated principal and correlation ID for a REST operation."""
+    operation = getattr(request.state, "protected_operation", None)
+    if not isinstance(operation, ProtectedOperation):
+        raise SecurityFailure(code="BACKEND_UNAVAILABLE")
+    if operation.principal != principal:
+        raise SecurityFailure(code="INTERNAL_ERROR")
+    return operation
+
+
+def _safe_error_response(code: SecurityErrorCode) -> JSONResponse:
+    response = SecurityErrorResponse(code=code, message=SECURITY_ERROR_MESSAGES[code])
+    return JSONResponse(
+        status_code=SECURITY_ERROR_STATUS_CODES[code], content=response.model_dump()
+    )
+
+
+def _protected_safe_error_response(
+    request: Request, code: SecurityErrorCode
+) -> JSONResponse:
+    response = _safe_error_response(code)
+    if getattr(request.state, "protected_route", False):
+        response.headers[REST_CONTRACT_VERSION_HEADER] = REST_CONTRACT_VERSION
+    return response
+
+
+async def _record_resolved_failure(
+    request: Request, code: SecurityErrorCode
+) -> SecurityErrorCode:
+    operation = getattr(request.state, "protected_operation", None)
+    if not isinstance(operation, ProtectedOperation):
+        return code
+    try:
+        route = request.scope.get("route")
+        route_path = getattr(route, "path", "unknown")
+        await operation.record_failure(name=f"rest:{route_path}", code=code)
+    except RestOperationFailure as error:
+        return error.code
+    return code
 
 
 def create_app(dependencies: ServerDependencies | None = None) -> FastAPI:
     """Create the REST shell from optional, explicitly injected dependencies."""
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     app.state.dependencies = dependencies
+
+    @app.middleware("http")
+    async def rest_contract_version_response(request: Request, call_next) -> Response:
+        response = await call_next(request)
+        operation = getattr(request.state, "protected_operation", None)
+        if (
+            isinstance(operation, ProtectedOperation)
+            and 200 <= response.status_code < 400
+        ):
+            try:
+                route = request.scope.get("route")
+                route_path = getattr(route, "path", "unknown")
+                await operation.record_success_if_needed(name=f"rest:{route_path}")
+            except RestOperationFailure as error:
+                return _protected_safe_error_response(request, error.code)
+        if getattr(request.state, "protected_route", False):
+            response.headers[REST_CONTRACT_VERSION_HEADER] = REST_CONTRACT_VERSION
+        return response
+
+    @app.exception_handler(SecurityFailure)
+    async def security_failure_response(
+        request: Request, error: SecurityFailure
+    ) -> JSONResponse:
+        return _protected_safe_error_response(
+            request, await _record_resolved_failure(request, error.code)
+        )
+
+    @app.exception_handler(RestOperationFailure)
+    async def operation_failure_response(
+        request: Request, error: RestOperationFailure
+    ) -> JSONResponse:
+        return _protected_safe_error_response(request, error.code)
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_failure_response(
+        request: Request, _error: RequestValidationError
+    ) -> JSONResponse:
+        return _protected_safe_error_response(
+            request, await _record_resolved_failure(request, "INVALID_ARGUMENT")
+        )
+
+    @app.exception_handler(Exception)
+    async def unexpected_failure_response(
+        request: Request, error: Exception
+    ) -> JSONResponse:
+        return _protected_safe_error_response(
+            request,
+            await _record_resolved_failure(request, _failure_code(error)),
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_failure_response(
+        request: Request, error: HTTPException
+    ) -> JSONResponse:
+        return _protected_safe_error_response(
+            request,
+            await _record_resolved_failure(request, _http_failure_code(error)),
+        )
 
     @app.get("/health")
     async def health() -> dict[str, str]:
