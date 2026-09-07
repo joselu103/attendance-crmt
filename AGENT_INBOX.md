@@ -1,4 +1,62 @@
-# Directive: CRMT-NONPROD-MCP-DEPLOY-001
+# Directive: CRMT-REST-CORE-001
+
+> **Status:** Active directive. This is the first reversible REST-migration
+> slice. The former `CRMT-NONPROD-MCP-DEPLOY-001` directive below is historical
+> and must not be executed as the target architecture.
+
+## Main Objective
+
+Add a minimal FastAPI REST application factory and public liveness route beside
+the existing FastMCP runtime, creating the composition seam for the REST core
+without changing authorization, tools, audit, SQL behavior, or deployment.
+
+## Required Context
+
+- Read root `docs/architecture/0001-rest-core-mcp-adapter.md`,
+  `docs/contracts/attendance-rest-v1.md`, and `docs/next-action.md`.
+- The established SQL Server schema, authentication, identity mapping,
+  authorization, audit persistence, and attendance behavior remain authoritative
+  in this repository; this slice moves none of them.
+- Preserve the current branch history and existing embedded FastMCP runtime as
+  the rollback bridge. Do not reset, squash, or absorb unrelated work.
+
+## Specific Steps
+
+1. Inspect the current worktree, recent commits, and relevant server/dependency
+   composition before editing.
+2. Write a failing black-box integration test for `GET /health` returning `200`
+   and `{"status":"ok"}` without using database, Entra, or audit dependencies.
+3. Add FastAPI as a direct dependency only if absent, then implement the smallest
+   injectable `create_app(...) -> FastAPI` composition factory that makes the
+   test pass.
+4. Keep existing FastMCP tool registration, authentication, audit middleware,
+   container entrypoint, and `/mcp` behavior unchanged.
+5. Run the focused test, then the full pytest/Ruff/format gates using the local
+   Python 3.14 virtual environment without injected Hermes paths.
+
+## Definition Of Done
+
+- A tested REST application factory exposes public liveness only.
+- Liveness does not initialize or access SQL Server, Entra metadata/JWKS, or the
+  audit store.
+- Existing FastMCP tests and behavior remain green as the rollback bridge.
+- No external resources, secrets, deployment configuration, git commits, or
+  production state are changed.
+
+## Required `AGENT_STATE.json` Update
+
+- Keep `status` as `blocked`; this local slice does not resolve external
+  deployment/Entra/SQL/audit prerequisites.
+- Add only evidence-backed REST-shell exports after verification.
+- Retain all unresolved activation and production-readiness blockers.
+
+---
+
+# Historical Directive: CRMT-NONPROD-MCP-DEPLOY-001
+
+> **Status:** Superseded by `CRMT-REST-CORE-001` and ADR 0001. Retained only as
+> historical evidence of external activation gates; do not deploy the embedded
+> FastMCP runtime as the target architecture.
 
 ## Main Objective
 Establish and verify a source-identifiable, authenticated non-production HTTPS `/mcp` deployment of Attendance CRMT contract 1.2.0 so downstream Teams integration can begin controlled end-to-end verification without enabling production traffic.
