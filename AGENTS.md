@@ -20,3 +20,17 @@ Load task-specific guidance:
 - [REST migration and compatibility](docs/agent-guidance/rest-migration.md)
 - [Verification and state](docs/agent-guidance/verification-and-state.md)
 - [Existing integration references](docs/integrations/teams-bot-mcp-auth-contract.md)
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Uses the default five-label triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Uses the single-context domain-doc layout. See `docs/agents/domain.md`.
