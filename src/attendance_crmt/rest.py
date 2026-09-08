@@ -15,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastmcp.server.auth import AccessToken
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse, Response
 
@@ -38,6 +39,13 @@ from attendance_crmt.attendance.services import (
     get_planned_work,
     list_current_attendance,
     list_my_attendance_events,
+)
+from attendance_crmt.catalog.contracts import EmployeePageQuery
+from attendance_crmt.catalog.services import (
+    get_employee,
+    list_active_employees,
+    list_locations,
+    list_punch_types,
 )
 from attendance_crmt.dependencies import ServerDependencies
 from attendance_crmt.http_contract import CORRELATION_ID_HEADER
@@ -365,6 +373,60 @@ def create_app(dependencies: ServerDependencies | None = None) -> FastAPI:
             ),
         )
 
+    @app.get("/api/v1/employees")
+    async def get_employees(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[EmployeePageQuery, Depends()],
+    ) -> Response:
+        """Return one bounded page of active employee directory entries."""
+        return await operation.execute(
+            name="rest:/api/v1/employees",
+            action=lambda: list_active_employees(
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/employees/{employee_id}")
+    async def get_employee_by_id(
+        employee_id: int,
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+    ) -> Response:
+        """Return one employee's established directory-safe representation."""
+        return await operation.execute(
+            name="rest:/api/v1/employees/{employee_id}",
+            action=lambda: _get_employee_or_not_found(
+                session_factory=operation.dependencies.attendance_session_factory,
+                employee_id=employee_id,
+            ),
+        )
+
+    @app.get("/api/v1/punch-types")
+    async def get_punch_types(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        active_only: bool = True,
+    ) -> Response:
+        """Return configured punch types and their server-derived locations."""
+        return await operation.execute(
+            name="rest:/api/v1/punch-types",
+            action=lambda: list_punch_types(
+                session_factory=operation.dependencies.attendance_session_factory,
+                active_only=active_only,
+            ),
+        )
+
+    @app.get("/api/v1/locations")
+    async def get_locations(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+    ) -> Response:
+        """Return recorded-attendance location reference data."""
+        return await operation.execute(
+            name="rest:/api/v1/locations",
+            action=lambda: list_locations(
+                session_factory=operation.dependencies.attendance_session_factory,
+            ),
+        )
+
     @app.get("/api/v1/attendance-events/{attendance_event_id}")
     async def get_attendance_event_detail(
         attendance_event_id: int,
@@ -491,3 +553,13 @@ def create_app(dependencies: ServerDependencies | None = None) -> FastAPI:
         )
 
     return app
+
+
+def _get_employee_or_not_found(
+    *, session_factory: sessionmaker[Session], employee_id: int
+):
+    """Adapt the catalog's absent-record signal to the frozen REST error."""
+    try:
+        return get_employee(session_factory=session_factory, employee_id=employee_id)
+    except LookupError:
+        raise HTTPException(status_code=404) from None
