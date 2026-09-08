@@ -19,6 +19,7 @@ from attendance_crmt.database import (
 )
 from attendance_crmt.identity import (
     AuthenticatedTokenRequesterResolver,
+    PrincipalResolver,
     RequesterResolver,
 )
 from attendance_crmt.settings import Settings
@@ -32,6 +33,7 @@ class ServerDependencies:
     audit_log: AuditLog
     requester_resolver: RequesterResolver
     auth_provider: TokenVerifier | None
+    principal_resolver: PrincipalResolver | None = None
 
 
 def create_production_dependencies(settings: Settings) -> ServerDependencies:
@@ -42,13 +44,15 @@ def create_production_dependencies(settings: Settings) -> ServerDependencies:
     audit_session_factory = create_audit_session_factory(
         create_audit_engine(settings.audit_db_path)
     )
+    principal_resolver = AuthenticatedTokenRequesterResolver(
+        session_factory=attendance_session_factory,
+        admin_role=settings.entra_admin_role,
+        email_aliases=settings.entra_email_aliases,
+    )
     return ServerDependencies(
         attendance_session_factory=attendance_session_factory,
         audit_log=AuditLog(audit_session_factory),
-        requester_resolver=AuthenticatedTokenRequesterResolver(
-            session_factory=attendance_session_factory,
-            admin_role=settings.entra_admin_role,
-            email_aliases=settings.entra_email_aliases,
-        ),
+        requester_resolver=principal_resolver,
         auth_provider=EntraTokenVerifier(settings.entra_mcp_authentication),
+        principal_resolver=principal_resolver,
     )

@@ -6,6 +6,7 @@
       "Attendance CRMT MCP contract 1.2.0 source: list_my_attendance_events(start_date, end_date, limit=50, offset=0) -> AttendanceEventPage; server-derived employee; inclusive max 31 days",
       "Public liveness contract: GET /health -> 200 {\"status\":\"ok\"}; liveness only, not database, Entra, or MCP readiness",
       "REST shell: attendance_crmt.rest.create_app(dependencies=None) -> FastAPI exposes only public GET /health -> 200 {\"status\":\"ok\"} without accessing injected dependencies",
+      "REST v1 protected GET /api/v1/me/attendance-events?start_date=&end_date=&limit=50&offset=0 -> requester-scoped AttendanceEventPage; server-derived employee; delegated bearer and UUID correlation required; inclusive max 31 days; correlation-linked safe audit outcome",
       "Read-only aggregate active-email readiness command: attendance-crmt-check-active-emails",
       "Safe non-production verifier commands: attendance-crmt-verify-deployment and attendance-crmt-verify-audit",
       "Reproducible local OCI artifact: source revision 33f0a3c9d5b719aa84a831bb6402800302359fa3; local digest attendance-crmt@sha256:0f994f5344989ea96fa5ba2dae4fe20066601b0dc24505ee31820a31668e7a0b; OCI revision label verified equal to that source revision"

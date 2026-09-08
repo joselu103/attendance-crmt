@@ -1,6 +1,6 @@
 # Directive: CRMT-REST-CORE-001
 
-> **Status:** Active directive. This is the first reversible REST-migration
+> **Status:** Completed directive. This was the first reversible REST-migration
 > slice. The former `CRMT-NONPROD-MCP-DEPLOY-001` directive below is historical
 > and must not be executed as the target architecture.
 

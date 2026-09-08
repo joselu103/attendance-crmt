@@ -1,4 +1,4 @@
-"""Requester identity abstractions independent of server composition."""
+"""Server-derived principal construction independent of transport composition."""
 
 from __future__ import annotations
 
@@ -18,18 +18,43 @@ from attendance_crmt.security_errors import SecurityErrorCode, SecurityFailure
 
 
 @dataclass(frozen=True)
-class Requester:
-    """The server-derived identity acting through an MCP request."""
+class Principal:
+    """The immutable, server-derived identity authorized by Attendance CRMT."""
 
     actor_id: str
     roles: frozenset[str]
     employee_id: int | None = None
+    client_id: str | None = None
+    auth_method: str = "delegated_bearer"
+
+
+# Existing application services use the migration-era name.  Keep it as a
+# compatibility alias while REST and MCP converge on the Principal boundary.
+Requester = Principal
+
+
+class PrincipalResolver(Protocol):
+    """Construct a principal from an already verified delegated access token."""
+
+    def resolve_access_token(
+        self, access_token: VerifiedDelegatedAccessToken | None
+    ) -> Principal:
+        """Return the server-derived principal for one verified token."""
+
+        ...
+
+
+class VerifiedDelegatedAccessToken(Protocol):
+    """The trusted token facts needed for transport-neutral principal derivation."""
+
+    client_id: str
+    claims: Mapping[str, Any]
 
 
 class RequesterResolver(Protocol):
     """Resolve the requester for the current transport context."""
 
-    def resolve(self, context: Any) -> Requester:
+    def resolve(self, context: Any) -> Principal:
         """Return the requester identity for one tool invocation."""
         ...
 
@@ -46,9 +71,9 @@ class EmailIdentityAmbiguousError(LookupError):
 class StaticRequesterResolver:
     """Development-only resolver until transport authentication is available."""
 
-    requester: Requester
+    requester: Principal
 
-    def resolve(self, context: Any) -> Requester:
+    def resolve(self, context: Any) -> Principal:
         """Return the configured MVP requester identity."""
         return self.requester
 
@@ -87,17 +112,22 @@ def resolve_active_employee_id_for_email(
 
 
 @dataclass(frozen=True)
-class AuthenticatedTokenRequesterResolver:
-    """Derive one requester exclusively from FastMCP's validated access token."""
+class DelegatedPrincipalResolver:
+    """Derive one principal from a verified token; adapt FastMCP only at the edge."""
 
     session_factory: sessionmaker[Session]
     admin_role: str
     email_aliases: Mapping[str, str] = field(default_factory=dict)
     access_token_provider: Callable[[], AccessToken | None] = get_access_token
 
-    def resolve(self, context: Any) -> Requester:
-        """Map validated delegated-user claims to one active employee."""
-        access_token = self.access_token_provider()
+    def resolve(self, context: Any) -> Principal:
+        """Adapt FastMCP's request-local token to the shared principal boundary."""
+        return self.resolve_access_token(self.access_token_provider())
+
+    def resolve_access_token(
+        self, access_token: VerifiedDelegatedAccessToken | None
+    ) -> Principal:
+        """Map one verified delegated-user token to one active employee."""
         if access_token is None:
             raise self._token_invalid_error()
 
@@ -140,10 +170,11 @@ class AuthenticatedTokenRequesterResolver:
         roles = {"employee"}
         if self._has_admin_role(claims.get("roles")):
             roles.add("admin")
-        return Requester(
+        return Principal(
             actor_id=actor_id,
             roles=frozenset(roles),
             employee_id=employee_id,
+            client_id=access_token.client_id,
         )
 
     def _has_admin_role(self, raw_roles: Any) -> bool:
@@ -158,3 +189,8 @@ class AuthenticatedTokenRequesterResolver:
     @staticmethod
     def _token_invalid_error() -> SecurityFailure:
         return SecurityFailure(code="TOKEN_INVALID")
+
+
+# Temporary MCP bridge compatibility. New REST composition uses the principal
+# terminology above; legacy tool registrations retain their established import.
+AuthenticatedTokenRequesterResolver = DelegatedPrincipalResolver
