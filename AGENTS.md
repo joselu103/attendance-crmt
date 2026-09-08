@@ -4,6 +4,8 @@ Attendance CRMT is the protected REST authority for attendance identity,
 authorization, audit, rules, and SQL Server access; the embedded FastMCP runtime
 is a temporary compatibility bridge.
 
+**Output Rule:** Wait for operations to finish. On success, output ONLY 3-5 bullet points summarizing results. No diffs, code dumps, or long explanations. (Details: `docs/agent-guidance/response-guide.md`)
+
 Use `uv` with Python 3.14. Before changing code, read `AGENT_STATE.json`, the
 active `AGENT_INBOX.md`, and the applicable root guidance. Use the clean
 environment commands below for the required Python checks:

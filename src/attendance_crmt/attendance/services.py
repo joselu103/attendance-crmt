@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session, selectinload, sessionmaker
+from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
 
 from attendance_crmt.attendance.contracts import (
     AttendanceAnalysisDay,
@@ -357,47 +357,101 @@ def get_employee_attendance_analysis(
     if "admin" not in requester.roles:
         raise SecurityFailure(code="FORBIDDEN")
 
-    start_at = datetime.combine(query.start_date, time.min)
-    end_exclusive = datetime.combine(query.end_date + timedelta(days=1), time.min)
+    return _load_employee_analyses(
+        session_factory=session_factory,
+        employee_ids=[query.employee_id],
+        start_date=query.start_date,
+        end_date=query.end_date,
+    )[query.employee_id]
+
+
+def _load_employee_analyses(
+    *,
+    session_factory: sessionmaker[Session],
+    employee_ids: list[int],
+    start_date: date,
+    end_date: date,
+) -> dict[int, EmployeeAttendanceAnalysis]:
+    """Load bounded reporting data once, then calculate each employee in memory."""
+    if not employee_ids:
+        return {}
+    start_at = datetime.combine(start_date, time.min)
+    end_exclusive = datetime.combine(end_date + timedelta(days=1), time.min)
     with session_factory() as session:
         events = list(
             session.scalars(
                 select(AttendanceLog)
-                .options(selectinload(AttendanceLog.punch_type))
+                .options(joinedload(AttendanceLog.punch_type))
                 .where(
-                    AttendanceLog.att_user_id == query.employee_id,
+                    AttendanceLog.att_user_id.in_(employee_ids),
                     AttendanceLog.att_in < end_exclusive,
-                    AttendanceLog.att_out >= start_at,
+                    or_(
+                        AttendanceLog.att_out.is_(None),
+                        AttendanceLog.att_out >= start_at,
+                    ),
                 )
-                .order_by(AttendanceLog.att_in, AttendanceLog.att_id)
-            )
-        )
-        incomplete_events = list(
-            session.scalars(
-                select(AttendanceLog).where(
-                    AttendanceLog.att_user_id == query.employee_id,
-                    AttendanceLog.att_in < end_exclusive,
-                    AttendanceLog.att_out.is_(None),
+                .order_by(
+                    AttendanceLog.att_user_id,
+                    AttendanceLog.att_in,
+                    AttendanceLog.att_id,
                 )
             )
         )
         planned_work = list(
             session.scalars(
                 select(PlannedWork).where(
-                    PlannedWork.izvajalec_id == query.employee_id,
+                    PlannedWork.izvajalec_id.in_(employee_ids),
                     PlannedWork.datum_id >= start_at,
                     PlannedWork.datum_id < end_exclusive,
                 )
             )
         )
 
+    events_by_employee: dict[int, list[AttendanceLog]] = {
+        employee_id: [] for employee_id in employee_ids
+    }
+    for event in events:
+        events_by_employee[event.att_user_id].append(event)
+    planned_by_employee: dict[int, list[PlannedWork]] = {
+        employee_id: [] for employee_id in employee_ids
+    }
+    for planned in planned_work:
+        planned_by_employee[planned.izvajalec_id].append(planned)
+    return {
+        employee_id: _analyze_employee_attendance(
+            employee_id=employee_id,
+            start_date=start_date,
+            end_date=end_date,
+            events=events_by_employee[employee_id],
+            planned_work=planned_by_employee[employee_id],
+        )
+        for employee_id in employee_ids
+    }
+
+
+def _analyze_employee_attendance(
+    *,
+    employee_id: int,
+    start_date: date,
+    end_date: date,
+    events: list[AttendanceLog],
+    planned_work: list[PlannedWork],
+) -> EmployeeAttendanceAnalysis:
+    """Apply the established per-employee reporting calculation to loaded rows."""
+    query = EmployeeAttendanceAnalysisQuery(
+        employee_id=employee_id, start_date=start_date, end_date=end_date
+    )
+    start_at = datetime.combine(query.start_date, time.min)
+    end_exclusive = datetime.combine(query.end_date + timedelta(days=1), time.min)
     planned_by_day = {
         planned.datum_id.date(): planned.att_planirano_ur_va for planned in planned_work
     }
     daily_logged = {day: Decimal(0) for day in _days_in_range(query)}
     incomplete_by_day = {day: 0 for day in daily_logged}
     anomaly_by_day = {day: 0 for day in daily_logged}
-    for event in incomplete_events:
+    for event in events:
+        if event.att_out is not None:
+            continue
         if event.att_in is not None:
             incomplete_day = max(event.att_in, start_at).date()
             if incomplete_day in incomplete_by_day:
@@ -463,7 +517,7 @@ def get_employee_attendance_analysis(
         for day in daily_logged
     ]
     return EmployeeAttendanceAnalysis(
-        employee_id=query.employee_id,
+        employee_id=employee_id,
         start_date=query.start_date,
         end_date=query.end_date,
         logged_hours=logged_hours,
@@ -521,19 +575,14 @@ def get_organization_attendance_analysis(
             )
         )
 
+    analyses = _load_employee_analyses(
+        session_factory=session_factory,
+        employee_ids=[employee.izvajalec_id for employee in employees],
+        start_date=query.start_date,
+        end_date=query.end_date,
+    )
     summaries = [
-        _employee_analysis_summary(
-            employee,
-            get_employee_attendance_analysis(
-                requester=requester,
-                session_factory=session_factory,
-                query=EmployeeAttendanceAnalysisQuery(
-                    employee_id=employee.izvajalec_id,
-                    start_date=query.start_date,
-                    end_date=query.end_date,
-                ),
-            ),
-        )
+        _employee_analysis_summary(employee, analyses[employee.izvajalec_id])
         for employee in employees
     ]
     logged_hours = sum((summary.logged_hours for summary in summaries), Decimal(0))
@@ -576,17 +625,15 @@ def get_attendance_exceptions(
             statement = statement.where(Employee.izvajalec_id.in_(query.employee_ids))
         employees = list(session.scalars(statement.order_by(Employee.izvajalec_id)))
 
+    analyses = _load_employee_analyses(
+        session_factory=session_factory,
+        employee_ids=[employee.izvajalec_id for employee in employees],
+        start_date=query.start_date,
+        end_date=query.end_date,
+    )
     exceptions: list[AttendanceException] = []
     for employee in employees:
-        analysis = get_employee_attendance_analysis(
-            requester=requester,
-            session_factory=session_factory,
-            query=EmployeeAttendanceAnalysisQuery(
-                employee_id=employee.izvajalec_id,
-                start_date=query.start_date,
-                end_date=query.end_date,
-            ),
-        )
+        analysis = analyses[employee.izvajalec_id]
         for day in analysis.days:
             if day.missing_attendance:
                 exceptions.append(
