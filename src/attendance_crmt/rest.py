@@ -14,6 +14,7 @@ from fastmcp.server.auth import AccessToken
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse, Response
+from starlette.types import Lifespan
 
 from attendance_crmt.attendance.contracts import MyAttendanceEventQuery
 from attendance_crmt.attendance.services import list_my_attendance_events
@@ -239,9 +240,18 @@ async def _record_resolved_failure(
     return code
 
 
-def create_app(dependencies: ServerDependencies | None = None) -> FastAPI:
+def create_app(
+    dependencies: ServerDependencies | None = None,
+    *,
+    lifespan: Lifespan[FastAPI] | None = None,
+) -> FastAPI:
     """Create the REST shell from optional, explicitly injected dependencies."""
-    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    app = FastAPI(
+        openapi_url=None,
+        docs_url=None,
+        redoc_url=None,
+        lifespan=lifespan,
+    )
     app.state.dependencies = dependencies
 
     @app.middleware("http")
