@@ -21,16 +21,21 @@ from starlette.responses import JSONResponse, Response
 from attendance_crmt.attendance.contracts import (
     AttendanceExceptionsQuery,
     CurrentAttendanceQuery,
+    DailyAttendanceQuery,
     EmployeeAttendanceAnalysisQuery,
     LiveAttendanceStatus,
     MyAttendanceEventQuery,
     OrganizationAttendanceAnalysisQuery,
+    PlannedWorkQuery,
 )
 from attendance_crmt.attendance.services import (
+    get_attendance_event,
     get_attendance_exceptions,
+    get_daily_attendance,
     get_employee_attendance_analysis,
     get_employee_attendance_summary,
     get_organization_attendance_analysis,
+    get_planned_work,
     list_current_attendance,
     list_my_attendance_events,
 )
@@ -124,6 +129,8 @@ def _failure_code(error: Exception) -> SecurityErrorCode:
         return error.code
     if isinstance(error, PermissionError):
         return "FORBIDDEN"
+    if isinstance(error, LookupError):
+        return "NOT_FOUND"
     if isinstance(error, SQLAlchemyError):
         return "BACKEND_UNAVAILABLE"
     return "INTERNAL_ERROR"
@@ -352,6 +359,57 @@ def create_app(dependencies: ServerDependencies | None = None) -> FastAPI:
         return await operation.execute(
             name="rest:/api/v1/me/attendance-events",
             action=lambda: list_my_attendance_events(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/attendance-events/{attendance_event_id}")
+    async def get_attendance_event_detail(
+        attendance_event_id: int,
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+    ) -> Response:
+        """Return one administrator-authorized attendance event with audit metadata."""
+        return await operation.execute(
+            name="rest:/api/v1/attendance-events/{attendance_event_id}",
+            action=lambda: get_attendance_event(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                attendance_event_id=attendance_event_id,
+            ),
+        )
+
+    @app.get("/api/v1/employees/{employee_id}/daily-attendance")
+    async def get_employee_daily_attendance(
+        employee_id: int,
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[DailyAttendanceQuery, Depends()],
+    ) -> Response:
+        """Return one administrator-authorized employee daily-attendance view."""
+        if query.employee_id != employee_id:
+            raise SecurityFailure(code="INVALID_ARGUMENT")
+        return await operation.execute(
+            name="rest:/api/v1/employees/{employee_id}/daily-attendance",
+            action=lambda: get_daily_attendance(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/employees/{employee_id}/planned-work")
+    async def get_employee_planned_work(
+        employee_id: int,
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[PlannedWorkQuery, Depends()],
+    ) -> Response:
+        """Return an administrator-authorized employee planned-work range."""
+        if query.employee_id != employee_id:
+            raise SecurityFailure(code="INVALID_ARGUMENT")
+        return await operation.execute(
+            name="rest:/api/v1/employees/{employee_id}/planned-work",
+            action=lambda: get_planned_work(
                 requester=operation.principal,
                 session_factory=operation.dependencies.attendance_session_factory,
                 query=query,
