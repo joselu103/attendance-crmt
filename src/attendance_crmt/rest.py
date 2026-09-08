@@ -368,6 +368,13 @@ def create_app(
         """Report public process liveness without checking dependencies."""
         return {"status": "ok"}
 
+    @app.post("/internal/v1/mcp/session-admissions", status_code=204)
+    async def admit_mcp_session(
+        _: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+    ) -> Response:
+        """Admit an adapter MCP session without exposing the resolved principal."""
+        return Response(status_code=204)
+
     @app.get("/api/v1/me/attendance-events")
     async def get_my_attendance_events(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
