@@ -2,21 +2,38 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from inspect import isawaitable
 from time import perf_counter
 from typing import Annotated, TypeVar
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastmcp.server.auth import AccessToken
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse, Response
 
-from attendance_crmt.attendance.contracts import MyAttendanceEventQuery
-from attendance_crmt.attendance.services import list_my_attendance_events
+from attendance_crmt.attendance.contracts import (
+    AttendanceExceptionsQuery,
+    CurrentAttendanceQuery,
+    EmployeeAttendanceAnalysisQuery,
+    LiveAttendanceStatus,
+    MyAttendanceEventQuery,
+    OrganizationAttendanceAnalysisQuery,
+)
+from attendance_crmt.attendance.services import (
+    get_attendance_exceptions,
+    get_employee_attendance_analysis,
+    get_employee_attendance_summary,
+    get_organization_attendance_analysis,
+    list_current_attendance,
+    list_my_attendance_events,
+)
 from attendance_crmt.dependencies import ServerDependencies
 from attendance_crmt.http_contract import CORRELATION_ID_HEADER
 from attendance_crmt.identity import Principal
@@ -32,6 +49,25 @@ Result = TypeVar("Result")
 
 REST_CONTRACT_VERSION = "1.0.0"
 REST_CONTRACT_VERSION_HEADER = "X-Attendance-API-Contract-Version"
+
+
+def current_attendance_query(
+    as_of: datetime | None = None,
+    status: LiveAttendanceStatus | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> CurrentAttendanceQuery:
+    """Build the current-attendance query with the established local default."""
+    try:
+        return CurrentAttendanceQuery(
+            as_of=as_of
+            or datetime.now(ZoneInfo("Europe/Ljubljana")).replace(tzinfo=None),
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+    except ValidationError:
+        raise SecurityFailure(code="INVALID_ARGUMENT") from None
 
 
 def _bearer_token(request: Request) -> str:
@@ -316,6 +352,80 @@ def create_app(dependencies: ServerDependencies | None = None) -> FastAPI:
         return await operation.execute(
             name="rest:/api/v1/me/attendance-events",
             action=lambda: list_my_attendance_events(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/attendance/current")
+    async def get_current_attendance(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[CurrentAttendanceQuery, Depends(current_attendance_query)],
+    ) -> Response:
+        """Return the current active-workforce attendance view."""
+        return await operation.execute(
+            name="rest:/api/v1/attendance/current",
+            action=lambda: list_current_attendance(
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/employees/{employee_id}/attendance-summary")
+    async def get_employee_summary(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[EmployeeAttendanceAnalysisQuery, Depends()],
+    ) -> Response:
+        """Return the administrator-authorized compact employee report."""
+        return await operation.execute(
+            name="rest:/api/v1/employees/{employee_id}/attendance-summary",
+            action=lambda: get_employee_attendance_summary(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/employees/{employee_id}/attendance-analysis")
+    async def get_employee_analysis(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[EmployeeAttendanceAnalysisQuery, Depends()],
+    ) -> Response:
+        """Return the administrator-authorized detailed employee report."""
+        return await operation.execute(
+            name="rest:/api/v1/employees/{employee_id}/attendance-analysis",
+            action=lambda: get_employee_attendance_analysis(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/attendance/organization-analysis")
+    async def get_organization_analysis(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[OrganizationAttendanceAnalysisQuery, Depends()],
+    ) -> Response:
+        """Return the administrator-authorized organization attendance report."""
+        return await operation.execute(
+            name="rest:/api/v1/attendance/organization-analysis",
+            action=lambda: get_organization_attendance_analysis(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/attendance/exceptions")
+    async def get_exceptions(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[AttendanceExceptionsQuery, Depends()],
+    ) -> Response:
+        """Return the administrator-authorized operational exception report."""
+        return await operation.execute(
+            name="rest:/api/v1/attendance/exceptions",
+            action=lambda: get_attendance_exceptions(
                 requester=operation.principal,
                 session_factory=operation.dependencies.attendance_session_factory,
                 query=query,
