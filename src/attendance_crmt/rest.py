@@ -15,6 +15,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse, Response
 
+from attendance_crmt.attendance.contracts import MyAttendanceEventQuery
+from attendance_crmt.attendance.services import list_my_attendance_events
 from attendance_crmt.dependencies import ServerDependencies
 from attendance_crmt.http_contract import CORRELATION_ID_HEADER
 from attendance_crmt.identity import Principal
@@ -304,5 +306,20 @@ def create_app(dependencies: ServerDependencies | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         """Report public process liveness without checking dependencies."""
         return {"status": "ok"}
+
+    @app.get("/api/v1/me/attendance-events")
+    async def get_my_attendance_events(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[MyAttendanceEventQuery, Depends()],
+    ) -> Response:
+        """Return one bounded page for the authenticated employee only."""
+        return await operation.execute(
+            name="rest:/api/v1/me/attendance-events",
+            action=lambda: list_my_attendance_events(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
 
     return app
