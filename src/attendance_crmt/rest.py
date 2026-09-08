@@ -21,6 +21,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import Lifespan
 
 from attendance_crmt.attendance.contracts import (
+    AttendanceEventQuery,
     AttendanceExceptionsQuery,
     CurrentAttendanceQuery,
     DailyAttendanceQuery,
@@ -38,6 +39,7 @@ from attendance_crmt.attendance.services import (
     get_employee_attendance_summary,
     get_organization_attendance_analysis,
     get_planned_work,
+    list_attendance_events,
     list_current_attendance,
     list_my_attendance_events,
 )
@@ -456,6 +458,24 @@ def create_app(
                 requester=operation.principal,
                 session_factory=operation.dependencies.attendance_session_factory,
                 attendance_event_id=attendance_event_id,
+            ),
+        )
+
+    @app.get("/api/v1/employees/{employee_id}/attendance-events")
+    async def get_employee_attendance_events(
+        employee_id: int,
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[AttendanceEventQuery, Depends()],
+    ) -> Response:
+        """Return an administrator-authorized bounded employee event page."""
+        if query.employee_id != employee_id:
+            raise SecurityFailure(code="INVALID_ARGUMENT")
+        return await operation.execute(
+            name="rest:/api/v1/employees/{employee_id}/attendance-events",
+            action=lambda: list_attendance_events(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
             ),
         )
 
