@@ -1,0 +1,60 @@
+# Attendance CRMT REST v1 Contract
+
+**Status:** Accepted adapter-facing contract
+
+Attendance CRMT is the authority for bearer validation, requester derivation,
+employee mapping, authorization, audit, attendance rules, and SQL Server access.
+The standalone Attendance MCP adapter consumes these REST operations; it does
+not reproduce those decisions or access SQL Server.
+
+## Common protected-route requirements
+
+Every route in this inventory except `GET /health` requires exactly one
+delegated `Authorization: Bearer <token>` header and exactly one UUID
+`X-Correlation-ID` header. CRMT derives the principal from the validated token,
+requires `attendance.access`, and records a correlation-linked audit outcome
+with no request values. Protected responses publish
+`X-Attendance-API-Contract-Version: 1.0.0`.
+
+Safe failures use `{ "code": "...", "message": "..." }`. Authentication
+failures return `401`; invalid correlation or arguments return `400`; identity
+mapping and authorization failures return `403`; absence returns `404`; and
+unavailable audit or database dependencies return `503`. Request values and
+diagnostics are never response or audit data.
+
+All attendance dates and database-local timestamps use Europe/Ljubljana local
+calendar semantics. Event timestamps are RFC 3339 values with the applicable
+Europe/Ljubljana offset. Page `limit` defaults to 50, is 1 through 100, and
+`offset` defaults to 0 and is nonnegative.
+
+## Legacy MCP tool inventory
+
+| Legacy MCP tool | REST v1 operation | Access and input semantics |
+| --- | --- | --- |
+| `list_employees` | `GET /api/v1/employees?limit=&offset=` | Delegated requester; active directory page. |
+| `get_employee` | `GET /api/v1/employees/{employee_id}` | Delegated requester; directory-safe employee record. |
+| `list_punch_types` | `GET /api/v1/punch-types?active_only=true` | Delegated requester; configured reference data. |
+| `list_locations` | `GET /api/v1/locations` | Delegated requester; location reference data. |
+| `list_attendance_events` | `GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=&offset=` | Administrator only; date ordering and bounded pagination match the legacy tool. |
+| `list_my_attendance_events` | `GET /api/v1/me/attendance-events?start_date=&end_date=&limit=&offset=` | Server-derived employee only; inclusive range is at most 31 calendar days. |
+| `get_attendance_event` | `GET /api/v1/attendance-events/{attendance_event_id}` | Administrator only; includes recorded audit metadata. |
+| `get_daily_attendance` | `GET /api/v1/employees/{employee_id}/daily-attendance?day=` | Administrator only; daily events and calculated outcome. |
+| `get_planned_work` | `GET /api/v1/employees/{employee_id}/planned-work?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
+| `get_current_attendance` | `GET /api/v1/attendance/current?as_of=&status=&limit=&offset=` | Delegated requester; local `as_of` defaults to current Europe/Ljubljana time. |
+| `get_employee_attendance_analysis` | `GET /api/v1/employees/{employee_id}/attendance-analysis?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
+| `get_employee_attendance_summary` | `GET /api/v1/employees/{employee_id}/attendance-summary?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
+| `get_exceptions` | `GET /api/v1/attendance/exceptions?start_date=&end_date=&employee_ids=&limit=&offset=` | Administrator only; bounded operational exception report. |
+| `get_organization_attendance_analysis` | `GET /api/v1/attendance/organization-analysis?start_date=&end_date=&limit=&offset=` | Administrator only; inclusive range is at most 31 calendar days. |
+
+`GET /health` is public liveness only and returns `200 {"status":"ok"}`. It
+does not establish database, Entra, audit, or MCP readiness.
+
+## Adapter boundary
+
+The temporary embedded FastMCP runtime remains available at `/mcp` as the
+rollback bridge. The future standalone adapter maps the legacy MCP inputs and
+outputs to this table, forwards the delegated bearer and correlation ID, and
+uses `POST /internal/v1/mcp/session-admissions` before opening an MCP session.
+That private admission endpoint returns `204` only after CRMT validates the
+same bearer, server-derived requester, and UUID correlation ID; it never
+returns a principal or credential data.
