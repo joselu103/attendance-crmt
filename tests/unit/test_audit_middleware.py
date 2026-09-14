@@ -68,6 +68,39 @@ def test_audit_middleware_records_authenticated_request_context() -> None:
     }
 
 
+def test_successful_tool_emits_safe_correlated_lifecycle_events() -> None:
+    correlation_id = UUID("11111111-1111-1111-1111-111111111111")
+    middleware = AuditMiddleware(
+        audit_log=CapturingAuditLog(),  # type: ignore[arg-type]
+        requester_resolver=StaticRequesterResolver(
+            Requester(actor_id="actor", employee_id=42, roles=frozenset({"employee"}))
+        ),
+        correlation_id_provider=lambda: correlation_id,
+    )
+    context = SimpleNamespace(
+        message=SimpleNamespace(name="future_tool", arguments={"token": "secret"})
+    )
+
+    with capture_logs() as logs:
+        asyncio.run(
+            middleware.on_call_tool(context, lambda _context: _successful_tool_result())
+        )
+
+    events = {event["event"]: event for event in logs}
+    assert events["operation_started"] == {
+        "event": "operation_started",
+        "log_level": "info",
+        "correlation_id": str(correlation_id),
+        "handler": "future_tool",
+        "inputs": {},
+        "state": "started",
+    }
+    assert events["operation_step"]["state"] == "tool_completed"
+    assert events["operation_succeeded"]["state"] == "success"
+    assert all(event["handler"] == "future_tool" for event in events.values())
+    assert "secret" not in json.dumps(logs)
+
+
 class FailingAuditLog:
     def record(self, **kwargs: Any) -> None:
         raise OSError("audit database unavailable")
@@ -248,6 +281,41 @@ def test_audit_middleware_records_invalid_argument_failure() -> None:
     assert audit_log.records[0]["error_code"] == "INVALID_ARGUMENT"
 
 
+def test_tool_failure_emits_safe_correlated_lifecycle_events() -> None:
+    correlation_id = UUID("11111111-1111-1111-1111-111111111111")
+    middleware = AuditMiddleware(
+        audit_log=CapturingAuditLog(),  # type: ignore[arg-type]
+        requester_resolver=StaticRequesterResolver(
+            Requester(actor_id="actor", employee_id=42, roles=frozenset({"employee"}))
+        ),
+        correlation_id_provider=lambda: correlation_id,
+    )
+    context = SimpleNamespace(
+        message=SimpleNamespace(name="future_tool", arguments={"token": "secret"})
+    )
+
+    with capture_logs() as logs, pytest.raises(ToolError, match='"INVALID_ARGUMENT"'):
+        asyncio.run(
+            middleware.on_call_tool(
+                context, lambda _context: _invalid_argument_tool_result()
+            )
+        )
+
+    events = {event["event"]: event for event in logs}
+    assert events["operation_step"]["state"] == "failure_classified"
+    assert events["operation_failed"] == {
+        "event": "operation_failed",
+        "log_level": "warning",
+        "correlation_id": str(correlation_id),
+        "handler": "future_tool",
+        "inputs": {},
+        "state": "failure",
+        "error_code": "INVALID_ARGUMENT",
+        "duration_ms": events["operation_failed"]["duration_ms"],
+    }
+    assert "secret" not in json.dumps(logs)
+
+
 async def _unavailable_tool_result() -> SimpleNamespace:
     raise OperationalError("SELECT 1", {}, ConnectionError("database unavailable"))
 
@@ -323,10 +391,10 @@ def test_unexpected_tool_failure_log_omits_exception_details(
             )
         )
 
-    event = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert event["event"] == "mcp_tool_interaction"
-    assert event["tool_name"] == "future_tool"
-    assert event["outcome"] == "failure"
+    events = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    event = next(event for event in events if event["event"] == "operation_failed")
+    assert event["handler"] == "future_tool"
+    assert event["error_code"] == "INTERNAL_ERROR"
     assert "exception" not in event
     assert "traceback" not in event
     assert "sensitive diagnostic sentinel" not in json.dumps(event)
@@ -351,7 +419,10 @@ def test_audit_persistence_failure_log_omits_exception_details(
             middleware.on_call_tool(context, lambda _context: _successful_tool_result())
         )
 
-    event = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    events = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    event = next(
+        event for event in events if event["event"] == "mcp_audit_persistence_failed"
+    )
     assert event["event"] == "mcp_audit_persistence_failed"
     assert event["tool_name"] == "future_tool"
     assert event["outcome"] == "success"

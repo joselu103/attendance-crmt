@@ -28,11 +28,79 @@ from attendance_crmt.security_errors import (
     BACKEND_UNAVAILABLE_MESSAGE,
     FORBIDDEN_MESSAGE,
     INTERNAL_ERROR_MESSAGE,
+    SecurityErrorCode,
     SecurityErrorResponse,
     SecurityFailure,
 )
 
 logger = get_logger(__name__)
+
+_CLIENT_ERROR_CODES = frozenset(
+    {
+        "AUTHENTICATION_REQUIRED",
+        "TOKEN_INVALID",
+        "CORRELATION_ID_INVALID",
+        "INVALID_ARGUMENT",
+        "IDENTITY_UNMAPPED",
+        "IDENTITY_AMBIGUOUS",
+        "FORBIDDEN",
+        "NOT_FOUND",
+    }
+)
+
+
+def _duration_ms(started_at: float) -> int:
+    """Return a non-negative monotonic duration for lifecycle events."""
+    return round((perf_counter() - started_at) * 1000)
+
+
+def _log_operation_started(*, tool_name: str, correlation_id: UUID) -> None:
+    """Emit a safe MCP operation start without retaining tool arguments."""
+    logger.info(
+        "operation_started",
+        correlation_id=str(correlation_id),
+        handler=tool_name,
+        inputs={},
+        state="started",
+    )
+
+
+def _log_operation_step(
+    *, tool_name: str, correlation_id: UUID, state: str, started_at: float
+) -> None:
+    """Emit a safe MCP progress event without retaining tool arguments."""
+    logger.info(
+        "operation_step",
+        correlation_id=str(correlation_id),
+        handler=tool_name,
+        inputs={},
+        state=state,
+        duration_ms=_duration_ms(started_at),
+    )
+
+
+def _log_operation_failure(
+    *,
+    tool_name: str,
+    correlation_id: UUID,
+    error_code: SecurityErrorCode | None,
+    started_at: float,
+) -> None:
+    """Emit one safe terminal MCP failure event."""
+    log = (
+        logger.warning
+        if error_code in _CLIENT_ERROR_CODES or error_code is None
+        else logger.error
+    )
+    log(
+        "operation_failed",
+        correlation_id=str(correlation_id),
+        handler=tool_name,
+        inputs={},
+        state="failure",
+        error_code=error_code,
+        duration_ms=_duration_ms(started_at),
+    )
 
 
 def _classify_public_failure(error: Exception) -> tuple[str | None, Exception]:
@@ -75,19 +143,41 @@ class AuditMiddleware(Middleware):
             correlation_id = self._correlation_id_provider()
         except RuntimeError:
             correlation_id = uuid4()
+        _log_operation_started(tool_name=tool_name, correlation_id=correlation_id)
         try:
             requester = self._requester_resolver.resolve(context)
         except SecurityFailure as error:
-            await self._record_or_raise(
+            _log_operation_step(
                 tool_name=tool_name,
-                requester=Requester(
-                    actor_id=error.actor_id or "unresolved",
-                    employee_id=None,
-                    roles=frozenset(),
-                ),
                 correlation_id=correlation_id,
-                request=request,
-                outcome="failure",
+                state="failure_classified",
+                started_at=started_at,
+            )
+            try:
+                await self._record_or_raise(
+                    tool_name=tool_name,
+                    requester=Requester(
+                        actor_id=error.actor_id or "unresolved",
+                        employee_id=None,
+                        roles=frozenset(),
+                    ),
+                    correlation_id=correlation_id,
+                    request=request,
+                    outcome="failure",
+                    error_code=error.code,
+                    started_at=started_at,
+                )
+            except ToolError:
+                _log_operation_failure(
+                    tool_name=tool_name,
+                    correlation_id=correlation_id,
+                    error_code="BACKEND_UNAVAILABLE",
+                    started_at=started_at,
+                )
+                raise
+            _log_operation_failure(
+                tool_name=tool_name,
+                correlation_id=correlation_id,
                 error_code=error.code,
                 started_at=started_at,
             )
@@ -100,43 +190,84 @@ class AuditMiddleware(Middleware):
             try:
                 result = await call_next(context)
             except Exception as error:  # noqa: BLE001
-                logger.error(
-                    "mcp_tool_interaction",
-                    tool_name=tool_name,
-                    outcome="failure",
-                )
                 error_code, public_error = _classify_public_failure(error)
                 if error_code == "FORBIDDEN":
                     log_permission_denied(
                         subject=requester.actor_id, client_id=requester.client_id
                     )
-                await self._record_or_raise(
+                _log_operation_step(
                     tool_name=tool_name,
-                    requester=requester,
                     correlation_id=correlation_id,
-                    request=request,
-                    outcome="failure",
+                    state="failure_classified",
+                    started_at=started_at,
+                )
+                try:
+                    await self._record_or_raise(
+                        tool_name=tool_name,
+                        requester=requester,
+                        correlation_id=correlation_id,
+                        request=request,
+                        outcome="failure",
+                        error_code=error_code,
+                        started_at=started_at,
+                    )
+                except ToolError:
+                    _log_operation_failure(
+                        tool_name=tool_name,
+                        correlation_id=correlation_id,
+                        error_code="BACKEND_UNAVAILABLE",
+                        started_at=started_at,
+                    )
+                    raise
+                _log_operation_failure(
+                    tool_name=tool_name,
+                    correlation_id=correlation_id,
                     error_code=error_code,
                     started_at=started_at,
                 )
                 raise public_error from None
 
             outcome = "failure" if getattr(result, "is_error", False) else "success"
-            duration_ms = await self._record_or_raise(
+            _log_operation_step(
                 tool_name=tool_name,
-                requester=requester,
                 correlation_id=correlation_id,
-                request=request,
-                outcome=outcome,
-                error_code=None,
+                state="tool_completed",
                 started_at=started_at,
             )
-            logger.info(
-                "mcp_tool_interaction",
-                tool_name=tool_name,
-                outcome=outcome,
-                duration_ms=duration_ms,
-            )
+            try:
+                await self._record_or_raise(
+                    tool_name=tool_name,
+                    requester=requester,
+                    correlation_id=correlation_id,
+                    request=request,
+                    outcome=outcome,
+                    error_code=None,
+                    started_at=started_at,
+                )
+            except ToolError:
+                _log_operation_failure(
+                    tool_name=tool_name,
+                    correlation_id=correlation_id,
+                    error_code="BACKEND_UNAVAILABLE",
+                    started_at=started_at,
+                )
+                raise
+            if outcome == "failure":
+                _log_operation_failure(
+                    tool_name=tool_name,
+                    correlation_id=correlation_id,
+                    error_code=None,
+                    started_at=started_at,
+                )
+            else:
+                logger.info(
+                    "operation_succeeded",
+                    correlation_id=str(correlation_id),
+                    handler=tool_name,
+                    inputs={},
+                    state="success",
+                    duration_ms=_duration_ms(started_at),
+                )
             return result
         finally:
             reset_identity_context(context_tokens)
