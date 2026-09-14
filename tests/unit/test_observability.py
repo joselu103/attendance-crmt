@@ -1,9 +1,15 @@
+import asyncio
 import io
 import json
 
 import structlog
 
-from attendance_crmt.observability import configure_structlog, get_logger
+from attendance_crmt.observability import (
+    bind_identity_context,
+    configure_structlog,
+    get_logger,
+    reset_identity_context,
+)
 
 
 def test_development_logging_is_colored_and_allows_debug_events() -> None:
@@ -60,6 +66,30 @@ def test_production_logging_recursively_redacts_without_mutating_payload() -> No
         "nested": {"Authorization": "Bearer secret", "safe": "value"},
         "items": [{"password": "secret"}, {"safe": "also-safe"}],
     }
+
+
+async def _emit_bound_identity_event() -> None:
+    tokens = bind_identity_context(subject="tenant:user", client_id="client")
+    try:
+        await asyncio.sleep(0)
+        get_logger("attendance_crmt.test").info("bound identity event")
+    finally:
+        reset_identity_context(tokens)
+
+
+def test_identity_context_survives_async_work_and_is_cleaned_up() -> None:
+    output = io.StringIO()
+    configure_structlog("production", stream=output)
+
+    asyncio.run(_emit_bound_identity_event())
+    get_logger("attendance_crmt.test").info("unbound identity event")
+
+    bound, unbound = map(json.loads, output.getvalue().splitlines())
+    assert bound["subject"] == "tenant:user"
+    assert bound["client_id"] == "client"
+    assert bound["authentication_scheme"] == "bearer"
+    assert "subject" not in unbound
+    assert "client_id" not in unbound
 
 
 def teardown_function() -> None:

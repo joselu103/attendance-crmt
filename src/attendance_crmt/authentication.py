@@ -187,86 +187,60 @@ class EntraTokenVerifier(TokenVerifier):
                 },
             )
             if decoded.get("aud") != self._settings.audience:
-                security_logger.info(
-                    "entra_token_rejected",
-                    reason="audience_mismatch",
-                    error_type=None,
-                )
+                self._log_auth_failed("audience_mismatch")
                 return None
             claims = EntraDelegatedClaims.model_validate(decoded)
             if claims.tid != self._settings.tenant_id:
-                security_logger.info(
-                    "entra_token_rejected",
-                    reason="tenant_mismatch",
-                    error_type=None,
-                )
+                self._log_auth_failed("tenant_mismatch")
                 return None
             if claims.client_id not in self._settings.allowed_client_ids:
-                security_logger.info(
-                    "entra_token_rejected",
-                    reason="client_not_allowed",
-                    error_type=None,
-                )
+                self._log_auth_failed("client_not_allowed")
                 return None
             if self._settings.required_scope not in claims.scopes:
-                security_logger.info(
-                    "entra_token_rejected",
-                    reason="scope_missing",
-                    error_type=None,
-                )
+                self._log_auth_failed("scope_missing")
                 return None
+            subject = f"{claims.tid}:{claims.oid}"
+            security_logger.info(
+                "auth_validated",
+                subject=subject,
+                client_id=str(claims.client_id),
+                authentication_scheme="bearer",
+            )
             return AccessToken(
                 token=token,
                 client_id=str(claims.client_id),
                 scopes=claims.scopes,
                 expires_at=claims.exp,
                 resource=self._settings.audience,
-                subject=f"{claims.tid}:{claims.oid}",
+                subject=subject,
                 claims=decoded,
             )
-        except InvalidTokenError as error:
-            security_logger.info(
-                "entra_token_rejected",
-                reason="token_validation_failed",
-                error_type=type(error).__name__,
-            )
+        except InvalidTokenError:
+            self._log_auth_failed("token_validation_failed")
             return None
-        except ValidationError as error:
-            security_logger.info(
-                "entra_token_rejected",
-                reason="claim_contract_invalid",
-                error_type=type(error).__name__,
-            )
+        except ValidationError:
+            self._log_auth_failed("claim_contract_invalid")
             return None
-        except PyJWKClientError as error:
-            security_logger.error(
-                "entra_token_validation_unavailable",
-                reason="signing_key_unavailable",
-                error_type=type(error).__name__,
-            )
+        except PyJWKClientError:
+            self._log_auth_failed("signing_key_unavailable")
             return None
-        except (httpx.HTTPError, TimeoutError) as error:
-            security_logger.error(
-                "entra_token_validation_unavailable",
-                reason="identity_metadata_unavailable",
-                error_type=type(error).__name__,
-            )
+        except httpx.HTTPError, TimeoutError:
+            self._log_auth_failed("identity_metadata_unavailable")
             return None
-        except ValueError as error:
-            security_logger.error(
-                "entra_token_validation_unavailable",
-                reason="identity_configuration_invalid",
-                error_type=type(error).__name__,
-            )
+        except ValueError:
+            self._log_auth_failed("identity_configuration_invalid")
             return None
-        except Exception as error:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.error("Entra token validation infrastructure failed")
-            security_logger.error(
-                "entra_token_validation_unavailable",
-                reason="unexpected_failure",
-                error_type=type(error).__name__,
-            )
+            self._log_auth_failed("unexpected_failure")
             return None
+
+    @staticmethod
+    def _log_auth_failed(reason: str) -> None:
+        """Report a stable failure reason without retaining credential details."""
+        security_logger.info(
+            "auth_failed", reason=reason, authentication_scheme="bearer"
+        )
 
     async def _get_jwk_client(self) -> PyJWKClient:
         if self._jwk_client is not None:

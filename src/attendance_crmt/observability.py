@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any, Literal, TextIO
 
 import structlog
+from structlog.contextvars import bind_contextvars, reset_contextvars
 
 LoggingEnvironment = Literal["development", "staging", "production"]
 
@@ -56,6 +57,7 @@ def configure_structlog(
     output = stream or sys.stdout
     structlog.configure(
         processors=[
+            structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.stdlib.add_logger_name,
@@ -85,3 +87,27 @@ def configure_structlog(
 def get_logger(name: str) -> Any:
     """Return a structured application logger."""
     return structlog.get_logger(name)
+
+
+def bind_identity_context(*, subject: str, client_id: str | None) -> dict[str, Any]:
+    """Bind safe validated identity facts for the current async request."""
+    return bind_contextvars(
+        subject=subject,
+        client_id=client_id,
+        authentication_scheme="bearer",
+    )
+
+
+def reset_identity_context(tokens: dict[str, Any]) -> None:
+    """Remove request-scoped identity facts after asynchronous work completes."""
+    reset_contextvars(**tokens)
+
+
+def log_permission_denied(*, subject: str, client_id: str | None) -> None:
+    """Emit a safe authorization-denial event for a validated requester."""
+    get_logger("attendance_crmt.authorization").info(
+        "permission_denied",
+        subject=subject,
+        client_id=client_id,
+        authentication_scheme="bearer",
+    )

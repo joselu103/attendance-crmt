@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 from fastmcp.exceptions import ToolError
 from sqlalchemy.exc import OperationalError
+from structlog.testing import capture_logs
 
 from attendance_crmt import audit_middleware
 from attendance_crmt.audit_middleware import AuditMiddleware
@@ -184,6 +185,41 @@ def test_audit_middleware_replaces_permission_failures_with_safe_error_code() ->
 
     assert audit_log.records[0]["outcome"] == "failure"
     assert audit_log.records[0]["error_code"] == "FORBIDDEN"
+
+
+def test_permission_denial_event_uses_only_safe_requester_context() -> None:
+    middleware = AuditMiddleware(
+        audit_log=CapturingAuditLog(),  # type: ignore[arg-type]
+        requester_resolver=StaticRequesterResolver(
+            Requester(
+                actor_id="tenant:user",
+                employee_id=42,
+                roles=frozenset({"employee"}),
+                client_id="client",
+            )
+        ),
+        correlation_id_provider=lambda: UUID("11111111-1111-1111-1111-111111111111"),
+    )
+    context = SimpleNamespace(
+        message=SimpleNamespace(name="future_tool", arguments={"token": "secret"})
+    )
+
+    with capture_logs() as logs, pytest.raises(ToolError, match='"FORBIDDEN"'):
+        asyncio.run(
+            middleware.on_call_tool(context, lambda _context: _forbidden_tool_result())
+        )
+
+    permission_denied = next(
+        event for event in logs if event["event"] == "permission_denied"
+    )
+    assert permission_denied == {
+        "event": "permission_denied",
+        "log_level": "info",
+        "subject": "tenant:user",
+        "client_id": "client",
+        "authentication_scheme": "bearer",
+    }
+    assert "secret" not in json.dumps(logs)
 
 
 async def _invalid_argument_tool_result() -> SimpleNamespace:

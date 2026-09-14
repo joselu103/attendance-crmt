@@ -278,13 +278,37 @@ def test_token_rejection_log_classifies_failure_without_token_contents() -> None
 
     assert logs == [
         {
-            "event": "entra_token_rejected",
+            "event": "auth_failed",
             "log_level": "info",
             "reason": "token_validation_failed",
-            "error_type": "InvalidAudienceError",
+            "authentication_scheme": "bearer",
         }
     ]
     assert token not in repr(logs)
+
+
+def test_authentication_success_event_excludes_credentials_and_claim_diagnostics() -> (
+    None
+):
+    settings = _authentication_settings()
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    verifier = _verifier(settings, lambda: {"keys": [_jwk(private_key, kid="key-1")]})
+    token = _signed_token(private_key, settings)
+
+    with capture_logs() as logs:
+        assert asyncio.run(verifier.verify_token(token)) is not None
+
+    assert logs == [
+        {
+            "event": "auth_validated",
+            "log_level": "info",
+            "subject": f"{TENANT_ID}:{USER_ID}",
+            "client_id": str(CLIENT_ID),
+            "authentication_scheme": "bearer",
+        }
+    ]
+    assert token not in json.dumps(logs)
+    assert "preferred_username" not in json.dumps(logs)
 
 
 @pytest.mark.parametrize(
