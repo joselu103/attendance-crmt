@@ -6,7 +6,7 @@ from datetime import datetime
 from inspect import isawaitable
 from time import perf_counter
 from typing import Annotated, TypeVar
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Request
@@ -18,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse, Response
+from starlette.routing import Match
 from starlette.types import Lifespan
 
 from attendance_crmt.attendance.contracts import (
@@ -55,6 +56,7 @@ from attendance_crmt.http_contract import CORRELATION_ID_HEADER
 from attendance_crmt.identity import Principal
 from attendance_crmt.observability import (
     bind_identity_context,
+    get_logger,
     log_permission_denied,
     reset_identity_context,
 )
@@ -70,6 +72,63 @@ Result = TypeVar("Result")
 
 REST_CONTRACT_VERSION = "1.0.0"
 REST_CONTRACT_VERSION_HEADER = "X-Attendance-API-Contract-Version"
+logger = get_logger(__name__)
+
+_CLIENT_ERROR_CODES = frozenset(
+    {
+        "AUTHENTICATION_REQUIRED",
+        "TOKEN_INVALID",
+        "CORRELATION_ID_INVALID",
+        "INVALID_ARGUMENT",
+        "IDENTITY_UNMAPPED",
+        "IDENTITY_AMBIGUOUS",
+        "FORBIDDEN",
+        "NOT_FOUND",
+    }
+)
+
+
+def _duration_ms(started_at: float) -> int:
+    """Return a non-negative monotonic duration suitable for structured logs."""
+    return round((perf_counter() - started_at) * 1000)
+
+
+def _request_route(request: Request) -> str:
+    """Resolve the route template without retaining path or query values."""
+    for route in request.app.router.routes:
+        match, _ = route.matches(request.scope)
+        if match is not Match.NONE:
+            path = getattr(route, "path", None)
+            if isinstance(path, str):
+                return path
+    return "unknown"
+
+
+def _safe_correlation_id(request: Request) -> str | None:
+    """Return only a validated correlation identifier for lifecycle logs."""
+    values = request.headers.getlist(CORRELATION_ID_HEADER)
+    if len(values) != 1:
+        return None
+    try:
+        return str(UUID(values[0]))
+    except ValueError:
+        return None
+
+
+def _log_operation_failure(
+    *, name: str, correlation_id: UUID, code: SecurityErrorCode, started_at: float
+) -> None:
+    """Emit a safe terminal event without operation inputs or diagnostics."""
+    log = logger.warning if code in _CLIENT_ERROR_CODES else logger.error
+    log(
+        "operation_failed",
+        correlation_id=str(correlation_id),
+        handler=name,
+        inputs={},
+        state="failure",
+        error_code=code,
+        duration_ms=_duration_ms(started_at),
+    )
 
 
 def current_attendance_query(
@@ -192,10 +251,25 @@ class ProtectedOperation:
     ) -> Response:
         """Run an operation, then durably record its one safe outcome."""
         started_at = perf_counter()
+        logger.info(
+            "operation_started",
+            correlation_id=str(self.correlation_id),
+            handler=name,
+            inputs={},
+            state="started",
+        )
         try:
             result = action()
             if isawaitable(result):
                 result = await result
+            logger.info(
+                "operation_step",
+                correlation_id=str(self.correlation_id),
+                handler=name,
+                inputs={},
+                state="action_completed",
+                duration_ms=_duration_ms(started_at),
+            )
             response = JSONResponse(content=jsonable_encoder(result))
         except Exception as error:  # noqa: BLE001
             code = _failure_code(error)
@@ -203,40 +277,136 @@ class ProtectedOperation:
                 log_permission_denied(
                     subject=self.principal.actor_id, client_id=self.principal.client_id
                 )
+            try:
+                await self._record_or_raise(
+                    name=name,
+                    outcome="failure",
+                    error_code=code,
+                    started_at=started_at,
+                )
+            except RestOperationFailure as audit_error:
+                _log_operation_failure(
+                    name=name,
+                    correlation_id=self.correlation_id,
+                    code=audit_error.code,
+                    started_at=started_at,
+                )
+                raise
+            _log_operation_failure(
+                name=name,
+                correlation_id=self.correlation_id,
+                code=code,
+                started_at=started_at,
+            )
+            raise RestOperationFailure(code) from None
+
+        try:
+            await self._record_or_raise(
+                name=name,
+                outcome="success",
+                error_code=None,
+                started_at=started_at,
+            )
+        except RestOperationFailure as error:
+            _log_operation_failure(
+                name=name,
+                correlation_id=self.correlation_id,
+                code=error.code,
+                started_at=started_at,
+            )
+            raise
+        logger.info(
+            "operation_succeeded",
+            correlation_id=str(self.correlation_id),
+            handler=name,
+            inputs={},
+            state="success",
+            duration_ms=_duration_ms(started_at),
+        )
+        return response
+
+    async def record_failure(self, *, name: str, code: SecurityErrorCode) -> None:
+        """Persist a fixed failure without retaining rejected input."""
+        started_at = perf_counter()
+        logger.info(
+            "operation_started",
+            correlation_id=str(self.correlation_id),
+            handler=name,
+            inputs={},
+            state="started",
+        )
+        logger.info(
+            "operation_step",
+            correlation_id=str(self.correlation_id),
+            handler=name,
+            inputs={},
+            state="failure_classified",
+            duration_ms=_duration_ms(started_at),
+        )
+        try:
             await self._record_or_raise(
                 name=name,
                 outcome="failure",
                 error_code=code,
                 started_at=started_at,
             )
-            raise RestOperationFailure(code) from None
-
-        await self._record_or_raise(
+        except RestOperationFailure as error:
+            _log_operation_failure(
+                name=name,
+                correlation_id=self.correlation_id,
+                code=error.code,
+                started_at=started_at,
+            )
+            raise
+        _log_operation_failure(
             name=name,
-            outcome="success",
-            error_code=None,
+            correlation_id=self.correlation_id,
+            code=code,
             started_at=started_at,
-        )
-        return response
-
-    async def record_failure(self, *, name: str, code: SecurityErrorCode) -> None:
-        """Persist a fixed failure without retaining rejected input."""
-        await self._record_or_raise(
-            name=name,
-            outcome="failure",
-            error_code=code,
-            started_at=perf_counter(),
         )
 
     async def record_success_if_needed(self, *, name: str) -> None:
         """Durably record a direct protected-route success exactly once."""
         if getattr(self.request.state, "audit_recorded", False):
             return
-        await self._record_or_raise(
-            name=name,
-            outcome="success",
-            error_code=None,
-            started_at=perf_counter(),
+        started_at = perf_counter()
+        logger.info(
+            "operation_started",
+            correlation_id=str(self.correlation_id),
+            handler=name,
+            inputs={},
+            state="started",
+        )
+        logger.info(
+            "operation_step",
+            correlation_id=str(self.correlation_id),
+            handler=name,
+            inputs={},
+            state="handler_completed",
+            duration_ms=_duration_ms(started_at),
+        )
+        try:
+            await self._record_or_raise(
+                name=name,
+                outcome="success",
+                error_code=None,
+                started_at=started_at,
+            )
+        except RestOperationFailure as error:
+            _log_operation_failure(
+                name=name,
+                correlation_id=self.correlation_id,
+                code=error.code,
+                started_at=started_at,
+            )
+            raise
+        logger.info(
+            "operation_succeeded",
+            correlation_id=str(self.correlation_id),
+            handler=name,
+            inputs={},
+            state="success",
+            duration_ms=_duration_ms(started_at),
         )
 
     async def _record_or_raise(
@@ -329,20 +499,56 @@ def create_app(
 
     @app.middleware("http")
     async def rest_contract_version_response(request: Request, call_next) -> Response:
-        response = await call_next(request)
+        started_at = perf_counter()
+        trace_id = str(uuid4())
+        route = _request_route(request)
+        correlation_id = _safe_correlation_id(request)
+        logger.info(
+            "request_received",
+            trace_id=trace_id,
+            correlation_id=correlation_id,
+            route=route,
+            state="received",
+        )
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.error(
+                "request_failed",
+                trace_id=trace_id,
+                correlation_id=correlation_id,
+                route=route,
+                status_code=500,
+                state="failed",
+                duration_ms=_duration_ms(started_at),
+            )
+            raise
         operation = getattr(request.state, "protected_operation", None)
         if (
             isinstance(operation, ProtectedOperation)
             and 200 <= response.status_code < 400
         ):
             try:
-                route = request.scope.get("route")
-                route_path = getattr(route, "path", "unknown")
-                await operation.record_success_if_needed(name=f"rest:{route_path}")
+                await operation.record_success_if_needed(name=f"rest:{route}")
             except RestOperationFailure as error:
-                return _protected_safe_error_response(request, error.code)
+                response = _protected_safe_error_response(request, error.code)
         if getattr(request.state, "protected_route", False):
             response.headers[REST_CONTRACT_VERSION_HEADER] = REST_CONTRACT_VERSION
+        event = "request_completed" if response.status_code < 400 else "request_failed"
+        log = (
+            logger.info
+            if event == "request_completed"
+            else (logger.warning if response.status_code < 500 else logger.error)
+        )
+        log(
+            event,
+            trace_id=trace_id,
+            correlation_id=correlation_id,
+            route=route,
+            status_code=response.status_code,
+            state="completed" if event == "request_completed" else "failed",
+            duration_ms=_duration_ms(started_at),
+        )
         return response
 
     @app.exception_handler(SecurityFailure)

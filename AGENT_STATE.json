@@ -16,7 +16,8 @@
       "Read-only aggregate active-email readiness command: attendance-crmt-check-active-emails",
       "Safe non-production verifier commands: attendance-crmt-verify-deployment and attendance-crmt-verify-audit",
       "Reproducible local OCI artifact: source revision 33f0a3c9d5b719aa84a831bb6402800302359fa3; local digest attendance-crmt@sha256:0f994f5344989ea96fa5ba2dae4fe20066601b0dc24505ee31820a31668e7a0b; OCI revision label verified equal to that source revision",
-      "Environment-aware structured logging: development emits colored DEBUG console logs; staging and production emit single-line INFO JSON to stdout with UTC timestamp, level, logger, and module/file/line callsite metadata; common sensitive fields are recursively redacted without mutating the source event payload"
+      "Environment-aware structured logging: development emits colored DEBUG console logs; staging and production emit single-line INFO JSON to stdout with UTC timestamp, level, logger, and module/file/line callsite metadata; common sensitive fields are recursively redacted without mutating the source event payload",
+      "REST lifecycle instrumentation: every request emits one request_received and one request_completed or request_failed event with generated trace ID, validated correlation when present, route template, status/state, and duration; protected operations emit safe start, step, success, or failure events with handler identity, empty sanitized inputs, correlation, duration, and stable error code"
     ],
     "events": []
   },
