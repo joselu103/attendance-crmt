@@ -269,7 +269,7 @@ def test_audit_middleware_replaces_unexpected_failures_with_safe_error_code() ->
 def test_unexpected_tool_failure_log_omits_exception_details(
     capsys, monkeypatch
 ) -> None:
-    configure_structlog()
+    configure_structlog("production")
     monkeypatch.setattr(audit_middleware, "logger", get_logger("audit-log-test"))
     middleware = AuditMiddleware(
         audit_log=CapturingAuditLog(),  # type: ignore[arg-type]
@@ -287,7 +287,7 @@ def test_unexpected_tool_failure_log_omits_exception_details(
             )
         )
 
-    event = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    event = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert event["event"] == "mcp_tool_interaction"
     assert event["tool_name"] == "future_tool"
     assert event["outcome"] == "failure"
@@ -299,7 +299,7 @@ def test_unexpected_tool_failure_log_omits_exception_details(
 def test_audit_persistence_failure_log_omits_exception_details(
     capsys, monkeypatch
 ) -> None:
-    configure_structlog()
+    configure_structlog("production")
     monkeypatch.setattr(audit_middleware, "logger", get_logger("audit-log-test"))
     middleware = AuditMiddleware(
         audit_log=FailingAuditLog(),  # type: ignore[arg-type]
@@ -315,7 +315,7 @@ def test_audit_persistence_failure_log_omits_exception_details(
             middleware.on_call_tool(context, lambda _context: _successful_tool_result())
         )
 
-    event = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    event = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert event["event"] == "mcp_audit_persistence_failed"
     assert event["tool_name"] == "future_tool"
     assert event["outcome"] == "success"
