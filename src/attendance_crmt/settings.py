@@ -60,7 +60,7 @@ class Settings(BaseSettings):
 
     server_name: str = "attendance-crmt"
     server_instructions: str = "Interact with the CRMT attendance system."
-    environment: Literal["development", "production"] = "development"
+    environment: Literal["development", "staging", "production"] = "development"
     attendance_db_url: str = Field(validation_alias=ATTENDANCE_DB_URL_ENV)
     audit_db_path: Path = Field(
         default=Path("data/audit.sqlite3"),

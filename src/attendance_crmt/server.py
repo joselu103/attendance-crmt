@@ -23,7 +23,7 @@ def create_server(
 ) -> FastMCP:
     """Create a server from explicit dependencies and authentication."""
     settings = settings or get_settings()
-    configure_structlog()
+    configure_structlog(settings.environment)
 
     server = FastMCP(
         name=settings.server_name,

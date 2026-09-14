@@ -176,11 +176,12 @@ Compose mounts `/app/data` as the persistent `attendance-audit` volume, so the
 audit history survives a container replacement. Back up that volume before
 performing destructive Docker cleanup.
 
-The server emits newline-delimited JSON through `structlog` to standard error.
-Each interaction log includes `timestamp`, `level`, `event`, `tool_name`,
-`outcome`, and `duration_ms`, ready for a future log collector or analysis
-tool. Request values are stored in SQLite with common sensitive fields
-(`authorization`, `cookie`, `password`, `secret`, and `token`) redacted.
+`ENVIRONMENT` selects logging output: development emits colored, human-readable
+DEBUG logs, while staging and production emit single-line INFO JSON logs to
+standard output. Every structured event includes a UTC `timestamp`, `level`,
+`logger`, and `module`/`filename`/`lineno` callsite metadata. Sensitive fields
+(`authorization`, `cookie`, `password`, `secret`, and `token`) are recursively
+redacted from log events without modifying the original payload.
 
 Production composition creates database infrastructure from environment
 settings once during server startup. Tests inject `ServerDependencies` with
