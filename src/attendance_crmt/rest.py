@@ -53,6 +53,11 @@ from attendance_crmt.catalog.services import (
 from attendance_crmt.dependencies import ServerDependencies
 from attendance_crmt.http_contract import CORRELATION_ID_HEADER
 from attendance_crmt.identity import Principal
+from attendance_crmt.observability import (
+    bind_identity_context,
+    log_permission_denied,
+    reset_identity_context,
+)
 from attendance_crmt.security_errors import (
     SECURITY_ERROR_MESSAGES,
     SECURITY_ERROR_STATUS_CODES,
@@ -100,7 +105,7 @@ def _bearer_token(request: Request) -> str:
     return credential.strip()
 
 
-async def get_principal(request: Request) -> Principal:
+async def get_principal(request: Request):
     """FastAPI dependency that verifies a bearer and derives one Principal."""
     request.state.protected_route = True
     dependencies: ServerDependencies | None = request.app.state.dependencies
@@ -120,7 +125,13 @@ async def get_principal(request: Request) -> Principal:
         correlation_id=_correlation_id(request),
         request=request,
     )
-    return principal
+    context_tokens = bind_identity_context(
+        subject=principal.actor_id, client_id=principal.client_id
+    )
+    try:
+        yield principal
+    finally:
+        reset_identity_context(context_tokens)
 
 
 def _correlation_id(request: Request) -> UUID:
@@ -188,6 +199,10 @@ class ProtectedOperation:
             response = JSONResponse(content=jsonable_encoder(result))
         except Exception as error:  # noqa: BLE001
             code = _failure_code(error)
+            if code == "FORBIDDEN":
+                log_permission_denied(
+                    subject=self.principal.actor_id, client_id=self.principal.client_id
+                )
             await self._record_or_raise(
                 name=name,
                 outcome="failure",
@@ -284,6 +299,11 @@ async def _record_resolved_failure(
     operation = getattr(request.state, "protected_operation", None)
     if not isinstance(operation, ProtectedOperation):
         return code
+    if code == "FORBIDDEN":
+        log_permission_denied(
+            subject=operation.principal.actor_id,
+            client_id=operation.principal.client_id,
+        )
     try:
         route = request.scope.get("route")
         route_path = getattr(route, "path", "unknown")

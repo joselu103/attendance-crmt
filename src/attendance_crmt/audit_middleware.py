@@ -18,7 +18,12 @@ from attendance_crmt.identity import (
     Requester,
     RequesterResolver,
 )
-from attendance_crmt.observability import get_logger
+from attendance_crmt.observability import (
+    bind_identity_context,
+    get_logger,
+    log_permission_denied,
+    reset_identity_context,
+)
 from attendance_crmt.security_errors import (
     BACKEND_UNAVAILABLE_MESSAGE,
     FORBIDDEN_MESSAGE,
@@ -88,43 +93,53 @@ class AuditMiddleware(Middleware):
             )
             raise error.as_tool_error() from None
 
+        context_tokens = bind_identity_context(
+            subject=requester.actor_id, client_id=requester.client_id
+        )
         try:
-            result = await call_next(context)
-        except Exception as error:  # noqa: BLE001
-            logger.error(
-                "mcp_tool_interaction",
-                tool_name=tool_name,
-                outcome="failure",
-            )
-            error_code, public_error = _classify_public_failure(error)
-            await self._record_or_raise(
+            try:
+                result = await call_next(context)
+            except Exception as error:  # noqa: BLE001
+                logger.error(
+                    "mcp_tool_interaction",
+                    tool_name=tool_name,
+                    outcome="failure",
+                )
+                error_code, public_error = _classify_public_failure(error)
+                if error_code == "FORBIDDEN":
+                    log_permission_denied(
+                        subject=requester.actor_id, client_id=requester.client_id
+                    )
+                await self._record_or_raise(
+                    tool_name=tool_name,
+                    requester=requester,
+                    correlation_id=correlation_id,
+                    request=request,
+                    outcome="failure",
+                    error_code=error_code,
+                    started_at=started_at,
+                )
+                raise public_error from None
+
+            outcome = "failure" if getattr(result, "is_error", False) else "success"
+            duration_ms = await self._record_or_raise(
                 tool_name=tool_name,
                 requester=requester,
                 correlation_id=correlation_id,
                 request=request,
-                outcome="failure",
-                error_code=error_code,
+                outcome=outcome,
+                error_code=None,
                 started_at=started_at,
             )
-            raise public_error from None
-
-        outcome = "failure" if getattr(result, "is_error", False) else "success"
-        duration_ms = await self._record_or_raise(
-            tool_name=tool_name,
-            requester=requester,
-            correlation_id=correlation_id,
-            request=request,
-            outcome=outcome,
-            error_code=None,
-            started_at=started_at,
-        )
-        logger.info(
-            "mcp_tool_interaction",
-            tool_name=tool_name,
-            outcome=outcome,
-            duration_ms=duration_ms,
-        )
-        return result
+            logger.info(
+                "mcp_tool_interaction",
+                tool_name=tool_name,
+                outcome=outcome,
+                duration_ms=duration_ms,
+            )
+            return result
+        finally:
+            reset_identity_context(context_tokens)
 
     async def _record_or_raise(
         self,
