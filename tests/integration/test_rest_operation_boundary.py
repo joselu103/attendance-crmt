@@ -1,6 +1,7 @@
 """Public REST behavior for protected operation execution."""
 
 import asyncio
+import json
 from dataclasses import replace
 from typing import Annotated
 
@@ -8,6 +9,7 @@ import httpx
 from fastapi import Depends
 from fastmcp.server.auth import AccessToken
 from starlette.exceptions import HTTPException
+from structlog.testing import capture_logs
 
 from attendance_crmt.audit import AuditEvent
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver
@@ -416,3 +418,80 @@ def test_executed_rest_operation_preserves_safe_http_failure_code(
     assert event.tool_name == "test.executed-http"
     assert event.outcome == "failure"
     assert event.error_code == "NOT_FOUND"
+
+
+def test_rest_success_emits_correlated_request_and_operation_lifecycle_events(
+    server_dependencies, employee_factory
+) -> None:
+    with capture_logs() as logs:
+        response = _get(
+            _protected_app(server_dependencies, employee_factory),
+            "/protected",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 200
+    events = {event["event"]: event for event in logs}
+    assert events["request_received"]["route"] == "/protected"
+    assert events["request_completed"] == {
+        "event": "request_completed",
+        "log_level": "info",
+        "trace_id": events["request_received"]["trace_id"],
+        "correlation_id": CORRELATION_ID,
+        "route": "/protected",
+        "status_code": 200,
+        "state": "completed",
+        "duration_ms": events["request_completed"]["duration_ms"],
+    }
+    assert events["operation_started"]["handler"] == "test.protected"
+    assert events["operation_started"]["inputs"] == {}
+    assert events["operation_started"]["correlation_id"] == CORRELATION_ID
+    assert events["operation_step"]["state"] == "action_completed"
+    assert events["operation_succeeded"]["state"] == "success"
+    assert all(event["log_level"] == "info" for event in logs)
+
+
+def test_rest_validation_failure_emits_safe_warning_lifecycle_events(
+    server_dependencies, employee_factory
+) -> None:
+    with capture_logs() as logs:
+        response = _get(
+            _protected_app(server_dependencies, employee_factory),
+            "/validated?page=token%3Dsecret",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 400
+    events = {event["event"]: event for event in logs}
+    assert events["request_failed"]["log_level"] == "warning"
+    assert events["request_failed"]["status_code"] == 400
+    assert events["operation_failed"] == {
+        "event": "operation_failed",
+        "log_level": "warning",
+        "correlation_id": CORRELATION_ID,
+        "handler": "rest:/validated",
+        "inputs": {},
+        "state": "failure",
+        "error_code": "INVALID_ARGUMENT",
+        "duration_ms": events["operation_failed"]["duration_ms"],
+    }
+    assert "secret" not in json.dumps(logs)
+
+
+def test_rest_runtime_failure_emits_safe_error_lifecycle_events(
+    server_dependencies, employee_factory
+) -> None:
+    with capture_logs() as logs:
+        response = _get(
+            _protected_app(server_dependencies, employee_factory),
+            "/failure",
+            headers=_headers(),
+        )
+
+    assert response.status_code == 500
+    events = {event["event"]: event for event in logs}
+    assert events["request_failed"]["log_level"] == "error"
+    assert events["request_failed"]["status_code"] == 500
+    assert events["operation_failed"]["log_level"] == "error"
+    assert events["operation_failed"]["error_code"] == "INTERNAL_ERROR"
+    assert "secret" not in json.dumps(logs)
