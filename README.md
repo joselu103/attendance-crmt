@@ -183,6 +183,12 @@ standard output. Every structured event includes a UTC `timestamp`, `level`,
 (`authorization`, `cookie`, `password`, `secret`, and `token`) are recursively
 redacted from log events without modifying the original payload.
 
+For every registered MCP tool call, operators can correlate the lifecycle with
+`operation_started`, `operation_step`, and one terminal `operation_succeeded`
+or `operation_failed` event. These events include only the tool handler,
+validated correlation ID, monotonic duration, state, and stable safe failure
+code where known; `inputs` is always empty and tool arguments are not logged.
+
 Production composition creates database infrastructure from environment
 settings once during server startup. Tests inject `ServerDependencies` with
 isolated session factories instead of relying on a shared `.env.test` file.
