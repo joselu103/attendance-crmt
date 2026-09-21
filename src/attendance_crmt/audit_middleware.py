@@ -104,6 +104,7 @@ def _log_operation_failure(
 
 
 def _classify_public_failure(error: Exception) -> tuple[str | None, Exception]:
+    """Map internal tool failures to stable public errors and audit codes."""
     if isinstance(error, SecurityFailure):
         return error.code, error.as_tool_error()
     if isinstance(error, PermissionError):
@@ -136,6 +137,7 @@ class AuditMiddleware(Middleware):
         self._correlation_id_provider = correlation_id_provider
 
     async def on_call_tool(self, context: Any, call_next: Any) -> Any:
+        """Invoke a tool with one correlation-linked, safe audit outcome."""
         started_at = perf_counter()
         tool_name = context.message.name
         request = context.message.arguments or {}
@@ -283,6 +285,7 @@ class AuditMiddleware(Middleware):
         error_code: str | None,
         started_at: float,
     ) -> int:
+        """Persist an audit event or replace persistence failure with a safe error."""
         try:
             return await self._record(
                 tool_name,

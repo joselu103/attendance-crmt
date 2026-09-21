@@ -59,6 +59,8 @@ class OpenIdConfiguration(BaseModel):
 
 
 class OpenIdConfigurationLoader(Protocol):
+    """Load validated provider metadata for delegated-token verification."""
+
     async def load(self, url: str) -> OpenIdConfiguration:
         """Load and validate OpenID configuration from a trusted URL."""
 
@@ -107,6 +109,7 @@ class EntraDelegatedClaims(BaseModel):
 
     @model_validator(mode="after")
     def require_delegated_client(self) -> EntraDelegatedClaims:
+        """Reject application-only tokens and claims with no client identity."""
         if self.idtyp is not None and self.idtyp.casefold() == "app":
             raise ValueError("application-only tokens are not accepted")
         if self.azp is None and self.appid is None:
@@ -115,6 +118,7 @@ class EntraDelegatedClaims(BaseModel):
 
     @property
     def client_id(self) -> UUID:
+        """Return the delegated client ID, preferring the ``azp`` claim."""
         value = self.azp or self.appid
         if value is None:  # pragma: no cover - guarded by model validation
             raise ValueError("azp or appid claim is required")
@@ -159,9 +163,11 @@ class EntraTokenVerifier(TokenVerifier):
         self._metadata_lock = asyncio.Lock()
 
     def get_middleware(self) -> list[Middleware]:
+        """Add Attendance's version, error, and correlation HTTP contracts."""
         return build_attendance_mcp_middleware(super().get_middleware())
 
     async def verify_token(self, token: str) -> AccessToken | None:
+        """Validate one delegated token and return ``None`` for safe rejection."""
         try:
             jwk_client = await self._get_jwk_client()
             signing_key = await asyncio.to_thread(
@@ -243,6 +249,7 @@ class EntraTokenVerifier(TokenVerifier):
         )
 
     async def _get_jwk_client(self) -> PyJWKClient:
+        """Initialize and cache a JWKS client after validating provider metadata."""
         if self._jwk_client is not None:
             return self._jwk_client
 

@@ -53,6 +53,7 @@ class MyAttendanceEventQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_date_range(self) -> MyAttendanceEventQuery:
+        """Reject invalid pagination, date ordering, and ranges over 31 days."""
         if not 1 <= self.limit <= 100:
             raise ValueError("limit must be between 1 and 100.")
         if self.offset < 0:
@@ -144,6 +145,7 @@ class PlannedWorkQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_range(self) -> PlannedWorkQuery:
+        """Reject reversed or over-31-day planned-work ranges."""
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date.")
         if (self.end_date - self.start_date).days >= 31:
@@ -194,6 +196,7 @@ class CurrentAttendanceQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_pagination(self) -> CurrentAttendanceQuery:
+        """Require a local timestamp and the shared bounded pagination."""
         if self.as_of.tzinfo is not None:
             raise ValueError("as_of must be a Europe/Ljubljana local timestamp.")
         if not 1 <= self.limit <= 100:
@@ -251,6 +254,7 @@ class EmployeeAttendanceAnalysisQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_range(self) -> EmployeeAttendanceAnalysisQuery:
+        """Reject reversed or over-31-day reporting ranges."""
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date.")
         if (self.end_date - self.start_date).days >= 31:
@@ -326,6 +330,7 @@ class OrganizationAttendanceAnalysisQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_range_and_pagination(self) -> OrganizationAttendanceAnalysisQuery:
+        """Reject invalid reporting ranges or summary pagination."""
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date.")
         if (self.end_date - self.start_date).days >= 31:
@@ -391,6 +396,7 @@ class AttendanceExceptionsQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_range_and_pagination(self) -> AttendanceExceptionsQuery:
+        """Reject invalid reporting ranges or exception-report pagination."""
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date.")
         if (self.end_date - self.start_date).days >= 31:

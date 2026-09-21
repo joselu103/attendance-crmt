@@ -372,7 +372,7 @@ def _load_employee_analyses(
     start_date: date,
     end_date: date,
 ) -> dict[int, EmployeeAttendanceAnalysis]:
-    """Load bounded reporting data once, then calculate each employee in memory."""
+    """Load bounded reporting rows in two set-based queries before in-memory analysis."""
     if not employee_ids:
         return {}
     start_at = datetime.combine(start_date, time.min)
@@ -437,7 +437,7 @@ def _analyze_employee_attendance(
     events: list[AttendanceLog],
     planned_work: list[PlannedWork],
 ) -> EmployeeAttendanceAnalysis:
-    """Apply the established per-employee reporting calculation to loaded rows."""
+    """Calculate clipped daily totals while excluding incomplete and overlapping intervals."""
     query = EmployeeAttendanceAnalysisQuery(
         employee_id=employee_id, start_date=start_date, end_date=end_date
     )
