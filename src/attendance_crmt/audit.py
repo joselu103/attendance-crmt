@@ -1,4 +1,4 @@
-"""Append-only SQLAlchemy audit storage for MCP tool interactions."""
+"""Append-only SQLAlchemy audit storage for protected operations."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class AuditBase(DeclarativeBase):
 
 
 class AuditEvent(AuditBase):
-    """One immutable record of an MCP tool interaction."""
+    """One immutable record of a protected operation."""
 
     __tablename__ = "audit_event"
 
@@ -78,7 +78,7 @@ def _migrate_audit_schema(engine: Engine) -> None:
 
 
 class AuditLog:
-    """Persist MCP audit events through an injected SQLAlchemy session factory."""
+    """Persist protected-operation audit events through an injected session factory."""
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
@@ -96,7 +96,7 @@ class AuditLog:
         correlation_id: UUID | None = None,
         error_code: str | None = None,
     ) -> None:
-        """Add one immutable audit event."""
+        """Add one immutable event after redacting sensitive request fields."""
         event = AuditEvent(
             occurred_at_utc=datetime.now(UTC),
             actor_id=actor_id,

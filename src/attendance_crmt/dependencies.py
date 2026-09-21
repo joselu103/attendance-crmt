@@ -27,7 +27,7 @@ from attendance_crmt.settings import Settings
 
 @dataclass(frozen=True)
 class ServerDependencies:
-    """Infrastructure used by the MCP server and its registered tools."""
+    """Infrastructure shared by the REST core and embedded MCP bridge."""
 
     attendance_session_factory: sessionmaker[Session]
     audit_log: AuditLog
@@ -37,7 +37,7 @@ class ServerDependencies:
 
 
 def create_production_dependencies(settings: Settings) -> ServerDependencies:
-    """Eagerly build production database dependencies from validated settings."""
+    """Build production database, audit, authentication, and identity dependencies."""
     attendance_session_factory = create_session_factory(
         create_engine_for_url(settings.attendance_db_url)
     )
