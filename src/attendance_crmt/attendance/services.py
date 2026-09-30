@@ -18,6 +18,8 @@ from attendance_crmt.attendance.contracts import (
     AttendanceExceptionKind,
     AttendanceExceptionsPage,
     AttendanceExceptionsQuery,
+    AttendanceLocationSummary,
+    AttendanceMonthlySummary,
     CurrentAttendancePage,
     CurrentAttendanceQuery,
     CurrentAttendanceSummary,
@@ -29,6 +31,8 @@ from attendance_crmt.attendance.contracts import (
     EmployeeAttendanceSummary,
     LiveAttendanceStatus,
     MyAttendanceEventQuery,
+    MyAttendanceSummary,
+    MyAttendanceSummaryQuery,
     OrganizationAttendanceAnalysis,
     OrganizationAttendanceAnalysisQuery,
     PlannedWorkDay,
@@ -83,6 +87,107 @@ def list_my_attendance_events(
             limit=query.limit,
             offset=query.offset,
         ),
+    )
+
+
+def get_my_latest_attendance_event(
+    *, requester: Requester, session_factory: sessionmaker[Session]
+) -> AttendanceEventSummary:
+    """Return the requester's latest recorded check-in without a target selector."""
+    if requester.employee_id is None:
+        raise SecurityFailure(code="IDENTITY_UNMAPPED")
+    with session_factory() as session:
+        event = session.scalar(
+            select(AttendanceLog)
+            .options(
+                selectinload(AttendanceLog.location),
+                selectinload(AttendanceLog.punch_type),
+            )
+            .where(
+                AttendanceLog.att_user_id == requester.employee_id,
+                AttendanceLog.att_in.is_not(None),
+            )
+            .order_by(AttendanceLog.att_in.desc(), AttendanceLog.att_id.desc())
+            .limit(1)
+        )
+    if event is None:
+        raise LookupError("No attendance event was found.")
+    return _attendance_event_summary(event)
+
+
+def get_my_attendance_summary(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: MyAttendanceSummaryQuery,
+) -> MyAttendanceSummary:
+    """Aggregate the requester's completed recorded time over a bounded period."""
+    if requester.employee_id is None:
+        raise SecurityFailure(code="IDENTITY_UNMAPPED")
+    start_at = datetime.combine(query.start_date, time.min)
+    end_exclusive = datetime.combine(query.end_date + timedelta(days=1), time.min)
+    with session_factory() as session:
+        events = list(
+            session.scalars(
+                select(AttendanceLog)
+                .options(selectinload(AttendanceLog.location))
+                .where(
+                    AttendanceLog.att_user_id == requester.employee_id,
+                    AttendanceLog.att_in.is_not(None),
+                    AttendanceLog.att_out.is_not(None),
+                    AttendanceLog.att_in < end_exclusive,
+                    AttendanceLog.att_out > start_at,
+                )
+                .order_by(AttendanceLog.att_in, AttendanceLog.att_id)
+            )
+        )
+
+    monthly_hours: dict[str, Decimal] = {}
+    monthly_days: dict[str, set[date]] = {}
+    location_hours: dict[str | None, Decimal] = {}
+    location_days: dict[str | None, set[date]] = {}
+    attendance_days: set[date] = set()
+    for event in events:
+        if (
+            event.att_in is None
+            or event.att_out is None
+            or event.att_out <= event.att_in
+        ):
+            continue
+        clipped_start = max(event.att_in, start_at)
+        clipped_end = min(event.att_out, end_exclusive)
+        location = event.location.lokacija_opis if event.location else None
+        for day, hours in _daily_hours(clipped_start, clipped_end):
+            month = day.strftime("%Y-%m")
+            monthly_hours[month] = monthly_hours.get(month, Decimal(0)) + hours
+            monthly_days.setdefault(month, set()).add(day)
+            location_hours[location] = location_hours.get(location, Decimal(0)) + hours
+            location_days.setdefault(location, set()).add(day)
+            attendance_days.add(day)
+
+    return MyAttendanceSummary(
+        start_date=query.start_date,
+        end_date=query.end_date,
+        total_recorded_hours=sum(monthly_hours.values(), Decimal(0)),
+        attendance_day_count=len(attendance_days),
+        monthly=[
+            AttendanceMonthlySummary(
+                month=month,
+                recorded_hours=monthly_hours[month],
+                attendance_day_count=len(monthly_days[month]),
+            )
+            for month in sorted(monthly_hours)
+        ],
+        locations=[
+            AttendanceLocationSummary(
+                location=location,
+                recorded_hours=location_hours[location],
+                attendance_day_count=len(location_days[location]),
+            )
+            for location in sorted(
+                location_hours, key=lambda value: (value is None, value or "")
+            )
+        ],
     )
 
 

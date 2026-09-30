@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 _EUROPE_LJUBLJANA = ZoneInfo("Europe/Ljubljana")
 _MAX_REQUESTER_ATTENDANCE_RANGE_DAYS = 31
+_MAX_REQUESTER_SUMMARY_RANGE_DAYS = 366
 
 
 def _serialize_local_datetime(value: datetime) -> str:
@@ -73,6 +74,28 @@ class MyAttendanceEventQuery(BaseModel):
         return self
 
 
+class MyAttendanceSummaryQuery(BaseModel):
+    """Validate a requester-scoped summary period of up to 366 calendar days."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> MyAttendanceSummaryQuery:
+        """Reject reversed and over-366-day inclusive reporting periods."""
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date.")
+        if (self.end_date - self.start_date).days >= (
+            _MAX_REQUESTER_SUMMARY_RANGE_DAYS
+        ):
+            raise ValueError(
+                "requester summary date range must not exceed 366 calendar days."
+            )
+        return self
+
+
 class AttendanceEventSummary(BaseModel):
     """A read-only attendance event returned by the application service."""
 
@@ -101,6 +124,39 @@ class AttendanceEventPage(BaseModel):
     limit: int
     offset: int
     next_offset: int | None
+
+
+class AttendanceMonthlySummary(BaseModel):
+    """Recorded attendance totals for one calendar month."""
+
+    model_config = ConfigDict(frozen=True)
+
+    month: str
+    recorded_hours: Decimal
+    attendance_day_count: int
+
+
+class AttendanceLocationSummary(BaseModel):
+    """Recorded attendance totals for one recorded location."""
+
+    model_config = ConfigDict(frozen=True)
+
+    location: str | None
+    recorded_hours: Decimal
+    attendance_day_count: int
+
+
+class MyAttendanceSummary(BaseModel):
+    """A requester-scoped long-range aggregate without individual event details."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date
+    total_recorded_hours: Decimal
+    attendance_day_count: int
+    monthly: list[AttendanceMonthlySummary]
+    locations: list[AttendanceLocationSummary]
 
 
 class AttendanceEventDetail(AttendanceEventSummary):
