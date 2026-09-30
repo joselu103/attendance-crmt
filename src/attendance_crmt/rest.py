@@ -2,7 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from inspect import isawaitable
 from time import perf_counter
 from typing import Annotated, TypeVar
@@ -27,10 +27,10 @@ from attendance_crmt.attendance.contracts import (
     CurrentAttendanceQuery,
     DailyAttendanceQuery,
     EmployeeAttendanceAnalysisQuery,
-    LiveAttendanceStatus,
     MyAttendanceEventQuery,
     OrganizationAttendanceAnalysisQuery,
     PlannedWorkQuery,
+    UserFacingLiveAttendanceStatus,
 )
 from attendance_crmt.attendance.services import (
     get_attendance_event,
@@ -44,12 +44,13 @@ from attendance_crmt.attendance.services import (
     list_current_attendance,
     list_my_attendance_events,
 )
-from attendance_crmt.catalog.contracts import EmployeePageQuery
+from attendance_crmt.catalog.contracts import EmployeePageQuery, EmployeeResolveQuery
 from attendance_crmt.catalog.services import (
     get_employee,
     list_active_employees,
     list_locations,
     list_punch_types,
+    resolve_employee,
 )
 from attendance_crmt.dependencies import ServerDependencies
 from attendance_crmt.http_contract import CORRELATION_ID_HEADER
@@ -133,7 +134,7 @@ def _log_operation_failure(
 
 def current_attendance_query(
     as_of: datetime | None = None,
-    status: LiveAttendanceStatus | None = None,
+    status: UserFacingLiveAttendanceStatus | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> CurrentAttendanceQuery:
@@ -143,6 +144,42 @@ def current_attendance_query(
             as_of=as_of
             or datetime.now(ZoneInfo("Europe/Ljubljana")).replace(tzinfo=None),
             status=status,
+            limit=limit,
+            offset=offset,
+        )
+    except ValidationError:
+        raise SecurityFailure(code="INVALID_ARGUMENT") from None
+
+
+def employee_resolve_query(
+    employee_id: int | None = None,
+    username: str | None = None,
+    email: str | None = None,
+) -> EmployeeResolveQuery:
+    """Build the resolver's exactly-one exact-identifier query."""
+    try:
+        return EmployeeResolveQuery(
+            employee_id=employee_id,
+            username=username,
+            email=email,
+        )
+    except ValidationError:
+        raise SecurityFailure(code="INVALID_ARGUMENT") from None
+
+
+def attendance_event_query(
+    employee_id: int,
+    start_date: date,
+    end_date: date,
+    limit: int = 50,
+    offset: int = 0,
+) -> AttendanceEventQuery:
+    """Build the administrator event-history query with safe validation errors."""
+    try:
+        return AttendanceEventQuery(
+            employee_id=employee_id,
+            start_date=start_date,
+            end_date=end_date,
             limit=limit,
             offset=offset,
         )
@@ -632,6 +669,21 @@ def create_app(
             ),
         )
 
+    @app.get("/api/v1/employees/resolve")
+    async def resolve_employee_by_identifier(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[EmployeeResolveQuery, Depends(employee_resolve_query)],
+    ) -> Response:
+        """Resolve one employee from exactly one administrator-supplied identifier."""
+        return await operation.execute(
+            name="rest:/api/v1/employees/resolve",
+            action=lambda: resolve_employee(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
     @app.get("/api/v1/employees/{employee_id}")
     async def get_employee_by_id(
         employee_id: int,
@@ -691,7 +743,7 @@ def create_app(
     async def get_employee_attendance_events(
         employee_id: int,
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
-        query: Annotated[AttendanceEventQuery, Depends()],
+        query: Annotated[AttendanceEventQuery, Depends(attendance_event_query)],
     ) -> Response:
         """Return an administrator-authorized bounded employee event page."""
         if query.employee_id != employee_id:
@@ -752,6 +804,7 @@ def create_app(
             action=lambda: list_current_attendance(
                 session_factory=operation.dependencies.attendance_session_factory,
                 query=query,
+                include_unknown=False,
             ),
         )
 

@@ -8,11 +8,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from attendance_crmt.catalog.contracts import (
     EmployeePage,
     EmployeePageQuery,
+    EmployeeResolveQuery,
     EmployeeSummary,
     LocationSummary,
     PunchTypeSummary,
 )
+from attendance_crmt.identity import Requester
 from attendance_crmt.models import Employee, Location, PunchType
+from attendance_crmt.security_errors import SecurityFailure
 
 _PUNCH_TYPE_LOCATION_IDS = {
     1: 2,
@@ -76,6 +79,41 @@ def get_employee(
     if employee is None:
         raise LookupError(f"Employee {employee_id} was not found.")
     return _employee_summary(employee)
+
+
+def resolve_employee(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: EmployeeResolveQuery,
+) -> EmployeeSummary:
+    """Resolve exactly one directory-safe employee record for an administrator."""
+    if "admin" not in requester.roles:
+        raise SecurityFailure(code="FORBIDDEN")
+
+    statement = select(Employee)
+    if query.employee_id is not None:
+        statement = statement.where(Employee.izvajalec_id == query.employee_id)
+    elif query.username is not None:
+        statement = statement.where(Employee.username == query.username)
+    else:
+        statement = statement.where(Employee.email == query.email)
+    with session_factory() as session:
+        employees = list(session.scalars(statement))
+    employees = [
+        employee
+        for employee in employees
+        if (
+            employee.izvajalec_id == query.employee_id
+            if query.employee_id is not None
+            else employee.username == query.username
+            if query.username is not None
+            else employee.email == query.email
+        )
+    ]
+    if len(employees) != 1:
+        raise LookupError("Employee was not found.")
+    return _employee_summary(employees[0])
 
 
 def list_punch_types(
