@@ -259,6 +259,7 @@ def list_current_attendance(
     *,
     session_factory: sessionmaker[Session],
     query: CurrentAttendanceQuery,
+    include_unknown: bool = True,
 ) -> CurrentAttendancePage:
     """Return each active employee's effective status at a local timestamp."""
     with session_factory() as session:
@@ -304,6 +305,8 @@ def list_current_attendance(
         )
         for employee in employees
     ]
+    if not include_unknown:
+        summaries = [summary for summary in summaries if summary.status != "unknown"]
     if query.status is not None:
         summaries = [summary for summary in summaries if summary.status == query.status]
     has_next_page = len(summaries) > query.offset + query.limit

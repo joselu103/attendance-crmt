@@ -24,7 +24,7 @@ from attendance_crmt.attendance.services import (
     list_current_attendance,
 )
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver, Principal
-from attendance_crmt.models import AttendanceLog, PlannedWork
+from attendance_crmt.models import AttendanceLog, PlannedWork, PunchType
 from attendance_crmt.rest import create_app
 
 CORRELATION_ID = "11111111-1111-1111-1111-111111111111"
@@ -139,6 +139,7 @@ def test_reporting_routes_match_application_services(
                 query=CurrentAttendanceQuery(
                     as_of=datetime(2026, 8, 14, 12, 0)  # noqa: DTZ001
                 ),
+                include_unknown=False,
             ),
         ),
         (
@@ -213,6 +214,42 @@ def test_administrative_reporting_routes_keep_safe_authorization_and_validation(
     assert invalid.status_code == 400
     assert invalid.json()["code"] == "INVALID_ARGUMENT"
     assert "token=secret" not in invalid.text
+
+
+def test_current_attendance_excludes_unknown_and_accepts_only_user_facing_filters(
+    server_dependencies, employee_factory
+) -> None:
+    _seed_reporting_data(server_dependencies, employee_factory)
+    with server_dependencies.attendance_session_factory() as session:
+        session.add_all(
+            [
+                employee_factory.build(izvajalec_id=3, priimek="Clark"),
+                PunchType(punch_type_id=99, punch_type_desc="Unmapped", active=1),
+                AttendanceLog(
+                    att_id=12,
+                    att_user_id=3,
+                    att_punch_type_id=99,
+                    att_in=datetime(2026, 8, 14, 8, 0),  # noqa: DTZ001
+                ),
+            ]
+        )
+        session.commit()
+
+    app = _app(server_dependencies)
+    all_current = _get(app, "/api/v1/attendance/current?as_of=2026-08-14T12:00:00")
+    office = _get(
+        app, "/api/v1/attendance/current?as_of=2026-08-14T12:00:00&status=office"
+    )
+    unknown = _get(
+        app, "/api/v1/attendance/current?as_of=2026-08-14T12:00:00&status=unknown"
+    )
+
+    assert all_current.status_code == 200
+    assert all(item["status"] != "unknown" for item in all_current.json()["items"])
+    assert office.status_code == 200
+    assert all(item["status"] == "office" for item in office.json()["items"])
+    assert unknown.status_code == 400
+    assert unknown.json()["code"] == "INVALID_ARGUMENT"
 
 
 def test_organization_and_exception_reports_use_a_fixed_query_budget(

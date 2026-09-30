@@ -271,6 +271,12 @@ service, which future REST endpoints can reuse.
 - `get_exceptions` — administrator-only paginated operational report for missing
   attendance, incomplete intervals, and interval anomalies.
 
+The adapter-facing REST v1 contract additionally provides administrator-only
+exact employee resolution at `GET /api/v1/employees/resolve`; it requires one of
+`employee_id`, `username`, or `email`. Its current-attendance route accepts only
+the documented user-facing statuses and omits unknown states. See
+[`docs/contracts/attendance-rest-v1.md`](docs/contracts/attendance-rest-v1.md).
+
 ## Adding a feature tool
 
 1. Add or extend immutable contracts and a reusable service under the relevant

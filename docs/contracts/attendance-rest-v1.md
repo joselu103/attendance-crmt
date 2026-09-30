@@ -33,14 +33,15 @@ Europe/Ljubljana offset. Page `limit` defaults to 50, is 1 through 100, and
 | --- | --- | --- |
 | `list_employees` | `GET /api/v1/employees?limit=&offset=` | Delegated requester; active directory page. |
 | `get_employee` | `GET /api/v1/employees/{employee_id}` | Delegated requester; directory-safe employee record. |
+| `resolve_employee` | `GET /api/v1/employees/resolve?employee_id=&username=&email=` | Administrator only; exactly one identifier is required and matches exactly; returns one directory-safe employee. |
 | `list_punch_types` | `GET /api/v1/punch-types?active_only=true` | Delegated requester; configured reference data. |
 | `list_locations` | `GET /api/v1/locations` | Delegated requester; location reference data. |
-| `list_attendance_events` | `GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=&offset=` | Administrator only; date ordering and bounded pagination match the legacy tool. |
+| `list_attendance_events` | `GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=&offset=` | Administrator only; inclusive range is at most 31 calendar days and pagination is bounded. |
 | `list_my_attendance_events` | `GET /api/v1/me/attendance-events?start_date=&end_date=&limit=&offset=` | Server-derived employee only; inclusive range is at most 31 calendar days. |
 | `get_attendance_event` | `GET /api/v1/attendance-events/{attendance_event_id}` | Administrator only; includes recorded audit metadata. |
 | `get_daily_attendance` | `GET /api/v1/employees/{employee_id}/daily-attendance?day=` | Administrator only; daily events and calculated outcome. |
 | `get_planned_work` | `GET /api/v1/employees/{employee_id}/planned-work?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
-| `get_current_attendance` | `GET /api/v1/attendance/current?as_of=&status=&limit=&offset=` | Delegated requester; local `as_of` defaults to current Europe/Ljubljana time. |
+| `get_current_attendance` | `GET /api/v1/attendance/current?as_of=&status=&limit=&offset=` | Delegated requester; local `as_of` defaults to current Europe/Ljubljana time. REST accepts only `office`, `remote`, `customer_site`, `break`, `absence`, or `no_status` filters and omits `unknown` rows. |
 | `get_employee_attendance_analysis` | `GET /api/v1/employees/{employee_id}/attendance-analysis?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
 | `get_employee_attendance_summary` | `GET /api/v1/employees/{employee_id}/attendance-summary?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
 | `get_exceptions` | `GET /api/v1/attendance/exceptions?start_date=&end_date=&employee_ids=&limit=&offset=` | Administrator only; bounded operational exception report. |

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class EmployeePageQuery(BaseModel):
@@ -20,6 +20,29 @@ class EmployeePageQuery(BaseModel):
             raise ValueError("limit must be between 1 and 100.")
         if self.offset < 0:
             raise ValueError("offset must not be negative.")
+        return self
+
+
+class EmployeeResolveQuery(BaseModel):
+    """One exact directory identifier for privileged employee resolution."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int | None = None
+    username: str | None = Field(default=None, min_length=1)
+    email: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_exactly_one_identifier(self) -> EmployeeResolveQuery:
+        """Require one, and only one, exact employee identifier."""
+        if (
+            sum(
+                value is not None
+                for value in (self.employee_id, self.username, self.email)
+            )
+            != 1
+        ):
+            raise ValueError("exactly one employee identifier is required.")
         return self
 
 
