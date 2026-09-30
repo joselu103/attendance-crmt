@@ -490,9 +490,9 @@ def create_app(
 ) -> FastAPI:
     """Create the REST shell from optional, explicitly injected dependencies."""
     app = FastAPI(
-        openapi_url=None,
-        docs_url=None,
-        redoc_url=None,
+        # openapi_url=None,
+        # docs_url=None,
+        # redoc_url=None,
         lifespan=lifespan,
     )
     app.state.dependencies = dependencies
