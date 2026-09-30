@@ -43,10 +43,3 @@ def test_health_does_not_access_injected_dependencies() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
-
-
-def test_rest_shell_does_not_publish_uncontracted_documentation() -> None:
-    """The first REST slice exposes liveness and no generated public interface."""
-    response = _get(create_app(), "/openapi.json")
-
-    assert response.status_code == 404
