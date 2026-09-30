@@ -152,6 +152,11 @@ def test_administrator_event_list_denies_non_administrators_and_hides_invalid_in
         f"{ROUTE}?start_date=2026-08-10&end_date=token%3Dsecret",
         headers=_headers(),
     )
+    over_range = _get(
+        _app(server_dependencies, roles=["attendance.admin"]),
+        f"{ROUTE}?start_date=2026-08-01&end_date=2026-09-01",
+        headers=_headers(),
+    )
 
     assert forbidden.status_code == 403
     assert forbidden.json() == {
@@ -163,11 +168,14 @@ def test_administrator_event_list_denies_non_administrators_and_hides_invalid_in
         "code": "INVALID_ARGUMENT",
         "message": "Check the attendance date range and pagination values and try again.",
     }
+    assert over_range.status_code == 400
+    assert over_range.json()["code"] == "INVALID_ARGUMENT"
     assert "token=secret" not in invalid.text
     with audit_session_factory() as session:
         events = session.query(AuditEvent).order_by(AuditEvent.event_id).all()
     assert [(event.outcome, event.error_code) for event in events] == [
         ("failure", "FORBIDDEN"),
+        ("failure", "INVALID_ARGUMENT"),
         ("failure", "INVALID_ARGUMENT"),
     ]
     assert all(event.correlation_id == CORRELATION_ID for event in events)

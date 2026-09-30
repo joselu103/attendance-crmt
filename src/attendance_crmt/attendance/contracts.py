@@ -31,13 +31,17 @@ class AttendanceEventQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_date_range(self) -> AttendanceEventQuery:
-        """Apply shared range and pagination rules."""
+        """Apply shared range, pagination, and 31-calendar-day rules."""
         if not 1 <= self.limit <= 100:
             raise ValueError("limit must be between 1 and 100.")
         if self.offset < 0:
             raise ValueError("offset must not be negative.")
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date.")
+        if (
+            self.end_date - self.start_date
+        ).days >= _MAX_REQUESTER_ATTENDANCE_RANGE_DAYS:
+            raise ValueError("attendance date range must not exceed 31 calendar days.")
         return self
 
 
@@ -181,6 +185,15 @@ LiveAttendanceStatus = Literal[
     "absence",
     "no_status",
     "unknown",
+]
+
+UserFacingLiveAttendanceStatus = Literal[
+    "office",
+    "remote",
+    "customer_site",
+    "break",
+    "absence",
+    "no_status",
 ]
 
 
