@@ -109,6 +109,9 @@ the bridge; do not use it for production identity design.
 
 The versioned client contract is
 [`docs/integrations/teams-bot-mcp-auth-contract.md`](docs/integrations/teams-bot-mcp-auth-contract.md).
+The REST inventory, including requester-scoped latest-event and long-range
+summary operations, is in
+[`docs/contracts/attendance-rest-v1.md`](docs/contracts/attendance-rest-v1.md).
 The secret-free operational handoff and acceptance gates for a non-production
 HTTPS deployment are in
 [`docs/integrations/nonproduction-deployment-readiness.md`](docs/integrations/nonproduction-deployment-readiness.md).

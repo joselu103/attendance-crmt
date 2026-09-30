@@ -38,6 +38,8 @@ Europe/Ljubljana offset. Page `limit` defaults to 50, is 1 through 100, and
 | `list_locations` | `GET /api/v1/locations` | Delegated requester; location reference data. |
 | `list_attendance_events` | `GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=&offset=` | Administrator only; inclusive range is at most 31 calendar days and pagination is bounded. |
 | `list_my_attendance_events` | `GET /api/v1/me/attendance-events?start_date=&end_date=&limit=&offset=` | Server-derived employee only; inclusive range is at most 31 calendar days. |
+| — | `GET /api/v1/me/attendance-events/latest` | Server-derived employee only; returns the most recent recorded event or safe `NOT_FOUND`. |
+| — | `GET /api/v1/me/attendance-summary?start_date=&end_date=` | Server-derived employee only; inclusive range is at most 366 calendar days; returns aggregate recorded time and monthly/location breakdowns. |
 | `get_attendance_event` | `GET /api/v1/attendance-events/{attendance_event_id}` | Administrator only; includes recorded audit metadata. |
 | `get_daily_attendance` | `GET /api/v1/employees/{employee_id}/daily-attendance?day=` | Administrator only; daily events and calculated outcome. |
 | `get_planned_work` | `GET /api/v1/employees/{employee_id}/planned-work?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
@@ -49,6 +51,25 @@ Europe/Ljubljana offset. Page `limit` defaults to 50, is 1 through 100, and
 
 `GET /health` is public liveness only and returns `200 {"status":"ok"}`. It
 does not establish database, Entra, audit, or MCP readiness.
+
+## Requester-scoped attendance extensions
+
+`GET /api/v1/me/attendance-events/latest` has no employee selector. It returns
+the requester-derived employee's most recent event, ordered by check-in time and
+then event ID; an empty history returns the standard safe `NOT_FOUND` response.
+
+`GET /api/v1/me/attendance-summary` accepts required inclusive `start_date` and
+`end_date` parameters for no more than 366 calendar days. Its response contains
+the requested period, `total_recorded_hours`, `attendance_day_count`, and
+`monthly` and `locations` breakdowns. Only completed positive intervals are
+counted, with intervals clipped to the requested local-calendar period. The
+summary contains no employee selector or individual event list.
+
+Current Presence (`GET /api/v1/attendance/current`) is a delegated-user
+directory/status view and may include active employees' names when attendance
+data supplies them. Individual Attendance Details are requester-scoped `me`
+operations or administrator-only employee/event operations; a caller cannot use
+Current Presence to obtain another employee's attendance history or summary.
 
 ## Adapter boundary
 

@@ -28,6 +28,7 @@ from attendance_crmt.attendance.contracts import (
     DailyAttendanceQuery,
     EmployeeAttendanceAnalysisQuery,
     MyAttendanceEventQuery,
+    MyAttendanceSummaryQuery,
     OrganizationAttendanceAnalysisQuery,
     PlannedWorkQuery,
     UserFacingLiveAttendanceStatus,
@@ -38,6 +39,8 @@ from attendance_crmt.attendance.services import (
     get_daily_attendance,
     get_employee_attendance_analysis,
     get_employee_attendance_summary,
+    get_my_attendance_summary,
+    get_my_latest_attendance_event,
     get_organization_attendance_analysis,
     get_planned_work,
     list_attendance_events,
@@ -183,6 +186,16 @@ def attendance_event_query(
             limit=limit,
             offset=offset,
         )
+    except ValidationError:
+        raise SecurityFailure(code="INVALID_ARGUMENT") from None
+
+
+def my_attendance_summary_query(
+    start_date: date, end_date: date
+) -> MyAttendanceSummaryQuery:
+    """Build the long-range requester summary query with safe validation."""
+    try:
+        return MyAttendanceSummaryQuery(start_date=start_date, end_date=end_date)
     except ValidationError:
         raise SecurityFailure(code="INVALID_ARGUMENT") from None
 
@@ -646,6 +659,36 @@ def create_app(
         return await operation.execute(
             name="rest:/api/v1/me/attendance-events",
             action=lambda: list_my_attendance_events(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get("/api/v1/me/attendance-events/latest")
+    async def get_my_latest_event(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+    ) -> Response:
+        """Return the authenticated employee's most recent attendance event."""
+        return await operation.execute(
+            name="rest:/api/v1/me/attendance-events/latest",
+            action=lambda: get_my_latest_attendance_event(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+            ),
+        )
+
+    @app.get("/api/v1/me/attendance-summary")
+    async def get_my_summary(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[
+            MyAttendanceSummaryQuery, Depends(my_attendance_summary_query)
+        ],
+    ) -> Response:
+        """Return the authenticated employee's bounded aggregate attendance view."""
+        return await operation.execute(
+            name="rest:/api/v1/me/attendance-summary",
+            action=lambda: get_my_attendance_summary(
                 requester=operation.principal,
                 session_factory=operation.dependencies.attendance_session_factory,
                 query=query,
