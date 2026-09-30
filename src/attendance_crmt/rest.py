@@ -2,7 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from inspect import isawaitable
 from time import perf_counter
 from typing import Annotated, TypeVar
@@ -22,6 +22,7 @@ from starlette.routing import Match
 from starlette.types import Lifespan
 
 from attendance_crmt.attendance.contracts import (
+    AnnualAttendanceSummaryQuery,
     AttendanceEventQuery,
     AttendanceExceptionsQuery,
     CurrentAttendanceQuery,
@@ -36,8 +37,9 @@ from attendance_crmt.attendance.services import (
     get_attendance_event,
     get_attendance_exceptions,
     get_daily_attendance,
+    get_employee_annual_attendance_summary,
     get_employee_attendance_analysis,
-    get_employee_attendance_summary,
+    get_my_annual_attendance_summary,
     get_organization_attendance_analysis,
     get_planned_work,
     list_attendance_events,
@@ -618,6 +620,23 @@ def create_app(
             ),
         )
 
+    @app.get("/api/v1/me/attendance-summary")
+    async def get_my_attendance_summary(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        start_date: date,
+        end_date: date,
+    ) -> Response:
+        """Return the authenticated employee's compact annual attendance report."""
+        return await operation.execute(
+            name="rest:/api/v1/me/attendance-summary",
+            action=lambda: get_my_annual_attendance_summary(
+                requester=operation.principal,
+                session_factory=operation.dependencies.attendance_session_factory,
+                start_date=start_date,
+                end_date=end_date,
+            ),
+        )
+
     @app.get("/api/v1/employees")
     async def get_employees(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
@@ -758,12 +777,12 @@ def create_app(
     @app.get("/api/v1/employees/{employee_id}/attendance-summary")
     async def get_employee_summary(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
-        query: Annotated[EmployeeAttendanceAnalysisQuery, Depends()],
+        query: Annotated[AnnualAttendanceSummaryQuery, Depends()],
     ) -> Response:
         """Return the administrator-authorized compact employee report."""
         return await operation.execute(
             name="rest:/api/v1/employees/{employee_id}/attendance-summary",
-            action=lambda: get_employee_attendance_summary(
+            action=lambda: get_employee_annual_attendance_summary(
                 requester=operation.principal,
                 session_factory=operation.dependencies.attendance_session_factory,
                 query=query,

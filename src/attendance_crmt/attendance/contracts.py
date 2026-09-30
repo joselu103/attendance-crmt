@@ -262,6 +262,24 @@ class EmployeeAttendanceAnalysisQuery(BaseModel):
         return self
 
 
+class AnnualAttendanceSummaryQuery(BaseModel):
+    """Validated compact-reporting range, limited to one inclusive leap year."""
+
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: int
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_range(self) -> AnnualAttendanceSummaryQuery:
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date.")
+        if (self.end_date - self.start_date).days >= 366:
+            raise ValueError("summary date range must not exceed 366 calendar days.")
+        return self
+
+
 class PunchTypeHours(BaseModel):
     """Completed, non-anomalous interval duration grouped by punch type."""
 

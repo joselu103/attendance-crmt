@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import sys
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any, Literal, TextIO
+from zoneinfo import ZoneInfo
 
 import structlog
 from structlog.contextvars import bind_contextvars, reset_contextvars
@@ -15,6 +17,18 @@ LoggingEnvironment = Literal["development", "staging", "production"]
 SENSITIVE_FIELD_NAMES = frozenset(
     {"authorization", "cookie", "password", "secret", "token"}
 )
+_LOCAL_TIMEZONE = ZoneInfo("Europe/Ljubljana")
+
+
+def add_local_and_utc_timestamps(
+    _logger: Any, _method_name: str, event_dict: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Attach operator-local and correlation-safe UTC timestamps to an event."""
+    now = datetime.now(UTC)
+    result = dict(event_dict)
+    result["timestamp"] = now.astimezone(_LOCAL_TIMEZONE).isoformat()
+    result["timestamp_utc"] = now.isoformat().replace("+00:00", "Z")
+    return result
 
 
 class _NamedPrintLoggerFactory:
@@ -59,7 +73,7 @@ def configure_structlog(
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            add_local_and_utc_timestamps,
             structlog.stdlib.add_logger_name,
             structlog.processors.CallsiteParameterAdder(
                 {

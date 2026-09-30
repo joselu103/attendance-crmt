@@ -149,6 +149,13 @@ any other identity selector. CRMT derives the employee, validates the request,
 authorizes access, and records the audit event. Invalid range or pagination
 values are MCP tool errors with the stable `INVALID_ARGUMENT` code.
 
+For a compact annual view, `GET /api/v1/me/attendance-summary` provides the
+same server-derived employee's totals and anomalies for an inclusive
+Europe/Ljubljana range of up to 366 calendar days. Administrators can request
+the equivalent compact report for one employee at
+`GET /api/v1/employees/{employee_id}/attendance-summary`; detailed event
+views remain bounded to 31 calendar days.
+
 ## Audit and structured logging
 
 Every successful or failed MCP tool interaction that reaches a registered tool

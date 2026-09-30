@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
 
 from attendance_crmt.attendance.contracts import (
+    AnnualAttendanceSummaryQuery,
     AttendanceAnalysisDay,
     AttendanceEventDetail,
     AttendanceEventPage,
@@ -438,15 +439,12 @@ def _analyze_employee_attendance(
     planned_work: list[PlannedWork],
 ) -> EmployeeAttendanceAnalysis:
     """Calculate clipped daily totals while excluding incomplete and overlapping intervals."""
-    query = EmployeeAttendanceAnalysisQuery(
-        employee_id=employee_id, start_date=start_date, end_date=end_date
-    )
-    start_at = datetime.combine(query.start_date, time.min)
-    end_exclusive = datetime.combine(query.end_date + timedelta(days=1), time.min)
+    start_at = datetime.combine(start_date, time.min)
+    end_exclusive = datetime.combine(end_date + timedelta(days=1), time.min)
     planned_by_day = {
         planned.datum_id.date(): planned.att_planirano_ur_va for planned in planned_work
     }
-    daily_logged = {day: Decimal(0) for day in _days_in_range(query)}
+    daily_logged = {day: Decimal(0) for day in _days_in_range(start_date, end_date)}
     incomplete_by_day = {day: 0 for day in daily_logged}
     anomaly_by_day = {day: 0 for day in daily_logged}
     for event in events:
@@ -518,8 +516,8 @@ def _analyze_employee_attendance(
     ]
     return EmployeeAttendanceAnalysis(
         employee_id=employee_id,
-        start_date=query.start_date,
-        end_date=query.end_date,
+        start_date=start_date,
+        end_date=end_date,
         logged_hours=logged_hours,
         known_planned_hours=known_planned_hours,
         balance_hours=(logged_hours - known_planned_hours)
@@ -534,10 +532,10 @@ def _analyze_employee_attendance(
     )
 
 
-def _days_in_range(query: EmployeeAttendanceAnalysisQuery) -> list[date]:
+def _days_in_range(start_date: date, end_date: date) -> list[date]:
     return [
-        query.start_date + timedelta(days=offset)
-        for offset in range((query.end_date - query.start_date).days + 1)
+        start_date + timedelta(days=offset)
+        for offset in range((end_date - start_date).days + 1)
     ]
 
 
@@ -714,6 +712,53 @@ def get_employee_attendance_summary(
         session_factory=session_factory,
         query=query,
     )
+    return _summary_from_analysis(analysis)
+
+
+def get_employee_annual_attendance_summary(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: AnnualAttendanceSummaryQuery,
+) -> EmployeeAttendanceSummary:
+    """Return an administrator-authorized compact report for up to 366 days."""
+    if "admin" not in requester.roles:
+        raise SecurityFailure(code="FORBIDDEN")
+    analysis = _load_employee_analyses(
+        session_factory=session_factory,
+        employee_ids=[query.employee_id],
+        start_date=query.start_date,
+        end_date=query.end_date,
+    )[query.employee_id]
+    return _summary_from_analysis(analysis)
+
+
+def get_my_annual_attendance_summary(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    start_date: date,
+    end_date: date,
+) -> EmployeeAttendanceSummary:
+    """Return the mapped requester's compact report for up to 366 days."""
+    if requester.employee_id is None:
+        raise SecurityFailure(code="IDENTITY_UNMAPPED")
+    query = AnnualAttendanceSummaryQuery(
+        employee_id=requester.employee_id, start_date=start_date, end_date=end_date
+    )
+    analysis = _load_employee_analyses(
+        session_factory=session_factory,
+        employee_ids=[query.employee_id],
+        start_date=query.start_date,
+        end_date=query.end_date,
+    )[query.employee_id]
+    return _summary_from_analysis(analysis)
+
+
+def _summary_from_analysis(
+    analysis: EmployeeAttendanceAnalysis,
+) -> EmployeeAttendanceSummary:
+    """Project a detailed analysis into the compact public summary."""
     return EmployeeAttendanceSummary(
         employee_id=analysis.employee_id,
         start_date=analysis.start_date,

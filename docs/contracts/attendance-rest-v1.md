@@ -37,12 +37,13 @@ Europe/Ljubljana offset. Page `limit` defaults to 50, is 1 through 100, and
 | `list_locations` | `GET /api/v1/locations` | Delegated requester; location reference data. |
 | `list_attendance_events` | `GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=&offset=` | Administrator only; date ordering and bounded pagination match the legacy tool. |
 | `list_my_attendance_events` | `GET /api/v1/me/attendance-events?start_date=&end_date=&limit=&offset=` | Server-derived employee only; inclusive range is at most 31 calendar days. |
+| `get_my_attendance_summary` | `GET /api/v1/me/attendance-summary?start_date=&end_date=` | Server-derived employee only; compact totals and anomalies for an inclusive range of at most 366 calendar days. |
 | `get_attendance_event` | `GET /api/v1/attendance-events/{attendance_event_id}` | Administrator only; includes recorded audit metadata. |
 | `get_daily_attendance` | `GET /api/v1/employees/{employee_id}/daily-attendance?day=` | Administrator only; daily events and calculated outcome. |
 | `get_planned_work` | `GET /api/v1/employees/{employee_id}/planned-work?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
 | `get_current_attendance` | `GET /api/v1/attendance/current?as_of=&status=&limit=&offset=` | Delegated requester; local `as_of` defaults to current Europe/Ljubljana time. |
 | `get_employee_attendance_analysis` | `GET /api/v1/employees/{employee_id}/attendance-analysis?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
-| `get_employee_attendance_summary` | `GET /api/v1/employees/{employee_id}/attendance-summary?start_date=&end_date=` | Administrator only; inclusive range is at most 31 calendar days. |
+| `get_employee_attendance_summary` | `GET /api/v1/employees/{employee_id}/attendance-summary?start_date=&end_date=` | Administrator only; compact totals and anomalies for an inclusive range of at most 366 calendar days. |
 | `get_exceptions` | `GET /api/v1/attendance/exceptions?start_date=&end_date=&employee_ids=&limit=&offset=` | Administrator only; bounded operational exception report. |
 | `get_organization_attendance_analysis` | `GET /api/v1/attendance/organization-analysis?start_date=&end_date=&limit=&offset=` | Administrator only; inclusive range is at most 31 calendar days. |
 

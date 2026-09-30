@@ -38,7 +38,10 @@ def test_staging_logging_is_single_line_json_on_info_or_higher() -> None:
     assert event["event"] == "staging event"
     assert event["level"] == "info"
     assert event["logger"] == "attendance_crmt.test"
-    assert event["timestamp"].endswith("Z")
+    assert event["timestamp"].endswith("+02:00") or event["timestamp"].endswith(
+        "+01:00"
+    )
+    assert event["timestamp_utc"].endswith("Z")
     assert event["module"] == "test_observability"
     assert event["filename"] == "test_observability.py"
     assert isinstance(event["lineno"], int)
