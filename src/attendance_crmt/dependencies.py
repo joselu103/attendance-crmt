@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fastmcp.server.auth import TokenVerifier
 from sqlalchemy.orm import Session, sessionmaker
 
 from attendance_crmt.audit import (
@@ -12,7 +11,7 @@ from attendance_crmt.audit import (
     create_audit_engine,
     create_audit_session_factory,
 )
-from attendance_crmt.authentication import EntraTokenVerifier
+from attendance_crmt.authentication import DelegatedTokenVerifier, EntraTokenVerifier
 from attendance_crmt.database import (
     create_engine_for_url,
     create_session_factory,
@@ -20,19 +19,17 @@ from attendance_crmt.database import (
 from attendance_crmt.identity import (
     AuthenticatedTokenRequesterResolver,
     PrincipalResolver,
-    RequesterResolver,
 )
 from attendance_crmt.settings import Settings
 
 
 @dataclass(frozen=True)
 class ServerDependencies:
-    """Infrastructure shared by the REST core and embedded MCP bridge."""
+    """Infrastructure required by protected REST operations."""
 
     attendance_session_factory: sessionmaker[Session]
     audit_log: AuditLog
-    requester_resolver: RequesterResolver
-    auth_provider: TokenVerifier | None
+    auth_provider: DelegatedTokenVerifier | None
     principal_resolver: PrincipalResolver | None = None
 
 
@@ -52,7 +49,6 @@ def create_production_dependencies(settings: Settings) -> ServerDependencies:
     return ServerDependencies(
         attendance_session_factory=attendance_session_factory,
         audit_log=AuditLog(audit_session_factory),
-        requester_resolver=principal_resolver,
-        auth_provider=EntraTokenVerifier(settings.entra_mcp_authentication),
+        auth_provider=EntraTokenVerifier(settings.entra_authentication),
         principal_resolver=principal_resolver,
     )

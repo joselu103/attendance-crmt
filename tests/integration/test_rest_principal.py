@@ -7,9 +7,9 @@ from typing import Annotated
 import httpx
 import pytest
 from fastapi import Depends
-from fastmcp.server.auth import AccessToken
 
 from attendance_crmt.audit import AuditEvent
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver, Principal
 from attendance_crmt.rest import create_app, get_principal
 
@@ -17,10 +17,10 @@ from attendance_crmt.rest import create_app, get_principal
 class StaticTokenVerifier:
     """Return a token already verified by the authentication boundary."""
 
-    def __init__(self, access_token: AccessToken | None) -> None:
+    def __init__(self, access_token: VerifiedDelegatedAccessToken | None) -> None:
         self._access_token = access_token
 
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         assert token == "delegated-token"
         return self._access_token
 
@@ -36,8 +36,8 @@ def _get(app, path: str, *, headers: list[tuple[str, str]]) -> httpx.Response:
     return asyncio.run(request())
 
 
-def _access_token() -> AccessToken:
-    return AccessToken(
+def _access_token() -> VerifiedDelegatedAccessToken:
+    return VerifiedDelegatedAccessToken(
         token="delegated-token",
         client_id="22222222-2222-2222-2222-222222222222",
         scopes=["attendance.access"],
@@ -50,7 +50,7 @@ def _access_token() -> AccessToken:
     )
 
 
-def test_rest_and_mcp_adapters_resolve_the_same_immutable_principal(
+def test_rest_dependency_resolves_an_immutable_principal(
     server_dependencies,
     employee_factory,
     audit_session_factory,
@@ -64,14 +64,12 @@ def test_rest_and_mcp_adapters_resolve_the_same_immutable_principal(
     resolver = AuthenticatedTokenRequesterResolver(
         session_factory=server_dependencies.attendance_session_factory,
         admin_role="attendance.admin",
-        access_token_provider=lambda: access_token,
     )
     app = create_app(
         replace(
             server_dependencies,
             auth_provider=StaticTokenVerifier(access_token),  # type: ignore[arg-type]
             principal_resolver=resolver,
-            requester_resolver=resolver,
         )
     )
 
@@ -105,7 +103,6 @@ def test_rest_and_mcp_adapters_resolve_the_same_immutable_principal(
         "client_id": "22222222-2222-2222-2222-222222222222",
         "auth_method": "delegated_bearer",
     }
-    assert resolver.resolve(context=None) == resolver.resolve_access_token(access_token)
     with pytest.raises(FrozenInstanceError):
         resolver.resolve_access_token(access_token).employee_id = 99  # type: ignore[misc]
     with audit_session_factory() as session:

@@ -27,9 +27,9 @@ calendar semantics. Event timestamps are RFC 3339 values with the applicable
 Europe/Ljubljana offset. Page `limit` defaults to 50, is 1 through 100, and
 `offset` defaults to 0 and is nonnegative.
 
-## Legacy MCP tool inventory
+## REST operation inventory
 
-| Legacy MCP tool | REST v1 operation | Access and input semantics |
+| Adapter operation | REST v1 operation | Access and input semantics |
 | --- | --- | --- |
 | `list_employees` | `GET /api/v1/employees?limit=&offset=` | Delegated requester; active directory page. |
 | `get_employee` | `GET /api/v1/employees/{employee_id}` | Delegated requester; directory-safe employee record. |
@@ -50,7 +50,7 @@ Europe/Ljubljana offset. Page `limit` defaults to 50, is 1 through 100, and
 | `get_organization_attendance_analysis` | `GET /api/v1/attendance/organization-analysis?start_date=&end_date=&limit=&offset=` | Administrator only; inclusive range is at most 31 calendar days. |
 
 `GET /health` is public liveness only and returns `200 {"status":"ok"}`. It
-does not establish database, Entra, audit, or MCP readiness.
+does not establish database, Entra, or audit readiness.
 
 ## Requester-scoped attendance extensions
 
@@ -73,10 +73,7 @@ Current Presence to obtain another employee's attendance history or summary.
 
 ## Adapter boundary
 
-The temporary embedded FastMCP runtime remains available at `/mcp` as the
-rollback bridge. The future standalone adapter maps the legacy MCP inputs and
-outputs to this table, forwards the delegated bearer and correlation ID, and
-uses `POST /internal/v1/mcp/session-admissions` before opening an MCP session.
-That private admission endpoint returns `204` only after CRMT validates the
-same bearer, server-derived requester, and UUID correlation ID; it never
-returns a principal or credential data.
+Attendance CRMT exposes REST only. It has no `/mcp` compatibility endpoint and
+no session-admission endpoint. An external adapter may map its public contract
+to this inventory, but every protected REST request is independently validated
+by CRMT and must forward the delegated bearer and correlation ID unchanged.

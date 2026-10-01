@@ -1,14 +1,14 @@
-"""Entra token verification and safe MCP authentication transport behavior."""
+"""Entra delegated-token verification for protected REST operations."""
 
 import asyncio
 import logging
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
 import httpx
 import jwt
-from fastmcp.server.auth import AccessToken, TokenVerifier
 from jwt import InvalidTokenError, PyJWKClient, PyJWKClientError
 from pydantic import (
     AnyHttpUrl,
@@ -18,35 +18,31 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from starlette.middleware import Middleware
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from attendance_crmt.http_contract import (
-    ContractVersionHeaderMiddleware,
-    CorrelationIdMiddleware,
-)
 from attendance_crmt.observability import get_logger
-from attendance_crmt.security_errors import (
-    AUTHENTICATION_REQUIRED_MESSAGE,
-    TOKEN_INVALID_MESSAGE,
-    SecurityErrorResponse,
-)
-from attendance_crmt.settings import EntraMcpAuthenticationSettings
+from attendance_crmt.settings import EntraAuthenticationSettings
 
 logger = logging.getLogger(__name__)
 security_logger = get_logger(__name__)
 
 
-def build_attendance_mcp_middleware(
-    authentication_middleware: list[Middleware],
-) -> list[Middleware]:
-    """Wrap bearer authentication with Attendance's HTTP contract behavior."""
-    return [
-        Middleware(ContractVersionHeaderMiddleware),
-        Middleware(AuthenticationErrorContractMiddleware),
-        *authentication_middleware,
-        Middleware(CorrelationIdMiddleware),
-    ]
+@dataclass(frozen=True)
+class VerifiedDelegatedAccessToken:
+    """Trusted delegated-token facts consumed by the REST identity boundary."""
+
+    client_id: str
+    claims: Mapping[str, Any]
+    token: str | None = None
+    scopes: tuple[str, ...] = ()
+
+
+class DelegatedTokenVerifier(Protocol):
+    """Verify a raw bearer credential into trusted delegated-token facts."""
+
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
+        """Return verified facts, or ``None`` for a safe credential rejection."""
+
+        ...
 
 
 class OpenIdConfiguration(BaseModel):
@@ -142,31 +138,23 @@ def _default_jwk_client_factory(uri: str) -> PyJWKClient:
     )
 
 
-class EntraTokenVerifier(TokenVerifier):
+class EntraTokenVerifier:
     """Validate delegated Entra access tokens against tenant metadata and JWKS."""
 
     def __init__(
         self,
-        settings: EntraMcpAuthenticationSettings,
+        settings: EntraAuthenticationSettings,
         *,
         metadata_loader: OpenIdConfigurationLoader | None = None,
         jwk_client_factory: JwkClientFactory | None = None,
     ) -> None:
-        super().__init__(
-            base_url=str(settings.mcp_base_url),
-            required_scopes=[settings.required_scope],
-        )
         self._settings = settings
         self._metadata_loader = metadata_loader or HttpOpenIdConfigurationLoader()
         self._jwk_client_factory = jwk_client_factory or _default_jwk_client_factory
         self._jwk_client: PyJWKClient | None = None
         self._metadata_lock = asyncio.Lock()
 
-    def get_middleware(self) -> list[Middleware]:
-        """Add Attendance's version, error, and correlation HTTP contracts."""
-        return build_attendance_mcp_middleware(super().get_middleware())
-
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         """Validate one delegated token and return ``None`` for safe rejection."""
         try:
             jwk_client = await self._get_jwk_client()
@@ -212,13 +200,8 @@ class EntraTokenVerifier(TokenVerifier):
                 client_id=str(claims.client_id),
                 authentication_scheme="bearer",
             )
-            return AccessToken(
-                token=token,
+            return VerifiedDelegatedAccessToken(
                 client_id=str(claims.client_id),
-                scopes=claims.scopes,
-                expires_at=claims.exp,
-                resource=self._settings.audience,
-                subject=subject,
                 claims=decoded,
             )
         except InvalidTokenError:
@@ -270,70 +253,3 @@ class EntraTokenVerifier(TokenVerifier):
                 raise ValueError("JWKS URI must use HTTPS")
             self._jwk_client = self._jwk_client_factory(str(metadata.jwks_uri))
             return self._jwk_client
-
-
-class AuthenticationErrorContractMiddleware:
-    """Replace framework 401 bodies with the stable public security contract."""
-
-    def __init__(self, app: ASGIApp) -> None:
-        self._app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            await self._app(scope, receive, send)
-            return
-
-        rejected_start: MutableMapping[str, Any] | None = None
-
-        async def send_with_contract(message: Message) -> None:
-            nonlocal rejected_start
-
-            if message["type"] == "http.response.start":
-                if message["status"] != 401:
-                    await send(message)
-                    return
-                rejected_start = message
-                return
-
-            if rejected_start is None:
-                await send(message)
-                return
-
-            if message["type"] != "http.response.body" or message.get(
-                "more_body", False
-            ):
-                return
-
-            has_authorization = any(
-                name.lower() == b"authorization" for name, _ in scope["headers"]
-            )
-            if has_authorization:
-                response = SecurityErrorResponse(
-                    code="TOKEN_INVALID",
-                    message=TOKEN_INVALID_MESSAGE,
-                )
-            else:
-                response = SecurityErrorResponse(
-                    code="AUTHENTICATION_REQUIRED",
-                    message=AUTHENTICATION_REQUIRED_MESSAGE,
-                )
-            body = response.model_dump_json().encode("utf-8")
-            authenticate_headers = [
-                (name, value)
-                for name, value in rejected_start.get("headers", [])
-                if name.lower() == b"www-authenticate"
-            ]
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 401,
-                    "headers": [
-                        *authenticate_headers,
-                        (b"content-type", b"application/json"),
-                        (b"content-length", str(len(body)).encode("ascii")),
-                    ],
-                }
-            )
-            await send({"type": "http.response.body", "body": body})
-
-        await self._app(scope, receive, send_with_contract)

@@ -1,14 +1,13 @@
 [project]
 name = "attendance-crmt"
 version = "0.1.0"
-description = "A modular FastMCP server scaffold."
+description = "Protected REST authority for attendance identity and reporting."
 authors = [
     { name = "Jose Luis Cambil", email = "joseluiscc103@gmail.com" }
 ]
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.141.1",
-    "fastmcp>=3.4.5",
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
@@ -22,8 +21,6 @@ dependencies = [
 [project.scripts]
 attendance-crmt = "attendance_crmt:main"
 attendance-crmt-check-active-emails = "attendance_crmt.readiness:main"
-attendance-crmt-verify-deployment = "attendance_crmt.deployment_verification:main"
-attendance-crmt-verify-audit = "attendance_crmt.deployment_verification:audit_main"
 attendance-crmt-verify-container-artifact = "attendance_crmt.container_artifact_verification:main"
 
 [build-system]

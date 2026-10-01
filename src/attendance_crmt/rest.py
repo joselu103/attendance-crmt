@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastmcp.server.auth import AccessToken
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -47,6 +46,7 @@ from attendance_crmt.attendance.services import (
     list_current_attendance,
     list_my_attendance_events,
 )
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.catalog.contracts import EmployeePageQuery, EmployeeResolveQuery
 from attendance_crmt.catalog.services import (
     get_employee,
@@ -56,7 +56,6 @@ from attendance_crmt.catalog.services import (
     resolve_employee,
 )
 from attendance_crmt.dependencies import ServerDependencies
-from attendance_crmt.http_contract import CORRELATION_ID_HEADER
 from attendance_crmt.identity import Principal
 from attendance_crmt.observability import (
     bind_identity_context,
@@ -76,6 +75,7 @@ Result = TypeVar("Result")
 
 REST_CONTRACT_VERSION = "1.0.0"
 REST_CONTRACT_VERSION_HEADER = "X-Attendance-API-Contract-Version"
+CORRELATION_ID_HEADER = "X-Correlation-ID"
 logger = get_logger(__name__)
 
 _CLIENT_ERROR_CODES = frozenset(
@@ -106,6 +106,25 @@ def _request_route(request: Request) -> str:
             if isinstance(path, str):
                 return path
     return "unknown"
+
+
+def _is_protected_route(request: Request) -> bool:
+    """Return whether the matched route resolves a protected principal."""
+    for route in request.app.router.routes:
+        match, _ = route.matches(request.scope)
+        if match is Match.NONE:
+            continue
+        dependant = getattr(route, "dependant", None)
+        if dependant is None:
+            return False
+        pending = [dependant]
+        while pending:
+            dependency = pending.pop()
+            if getattr(dependency, "call", None) is get_principal:
+                return True
+            pending.extend(getattr(dependency, "dependencies", ()))
+        return False
+    return False
 
 
 def _safe_correlation_id(request: Request) -> str | None:
@@ -223,7 +242,7 @@ async def get_principal(request: Request):
     if dependencies.principal_resolver is None:
         raise SecurityFailure(code="TOKEN_INVALID")
 
-    verifier: Callable[[str], Awaitable[AccessToken | None]] = (
+    verifier: Callable[[str], Awaitable[VerifiedDelegatedAccessToken | None]] = (
         dependencies.auth_provider.verify_token
     )
     access_token = await verifier(_bearer_token(request))
@@ -533,6 +552,49 @@ async def _record_resolved_failure(
     return code
 
 
+async def _record_unresolved_failure(
+    request: Request, code: SecurityErrorCode
+) -> SecurityErrorCode:
+    """Record one safe protected failure before a principal can be derived."""
+    if not getattr(request.state, "protected_route", False):
+        return code
+    if getattr(request.state, "audit_recorded", False):
+        return code
+    dependencies: ServerDependencies | None = request.app.state.dependencies
+    if dependencies is None:
+        return "BACKEND_UNAVAILABLE"
+    correlation_id = _safe_correlation_id(request)
+    try:
+        dependencies.audit_log.record(
+            actor_id="unresolved",
+            employee_id=None,
+            roles=frozenset(),
+            correlation_id=UUID(correlation_id)
+            if correlation_id is not None
+            else uuid4(),
+            tool_name=f"rest:{_request_route(request)}",
+            request={},
+            outcome="failure",
+            error_code=code,
+            duration_ms=0,
+        )
+        request.state.audit_recorded = True
+    except Exception:  # noqa: BLE001
+        return "BACKEND_UNAVAILABLE"
+    return code
+
+
+async def _record_protected_failure(
+    request: Request, code: SecurityErrorCode
+) -> SecurityErrorCode:
+    """Record a failure from either a resolved or an unresolved protected request."""
+    if isinstance(
+        getattr(request.state, "protected_operation", None), ProtectedOperation
+    ):
+        return await _record_resolved_failure(request, code)
+    return await _record_unresolved_failure(request, code)
+
+
 def create_app(
     dependencies: ServerDependencies | None = None,
     *,
@@ -557,6 +619,7 @@ def create_app(
             route=route,
             state="received",
         )
+        request.state.protected_route = _is_protected_route(request)
         try:
             response = await call_next(request)
         except Exception:
@@ -603,7 +666,7 @@ def create_app(
         request: Request, error: SecurityFailure
     ) -> JSONResponse:
         return _protected_safe_error_response(
-            request, await _record_resolved_failure(request, error.code)
+            request, await _record_protected_failure(request, error.code)
         )
 
     @app.exception_handler(RestOperationFailure)
@@ -617,7 +680,7 @@ def create_app(
         request: Request, _error: RequestValidationError
     ) -> JSONResponse:
         return _protected_safe_error_response(
-            request, await _record_resolved_failure(request, "INVALID_ARGUMENT")
+            request, await _record_protected_failure(request, "INVALID_ARGUMENT")
         )
 
     @app.exception_handler(Exception)
@@ -626,7 +689,7 @@ def create_app(
     ) -> JSONResponse:
         return _protected_safe_error_response(
             request,
-            await _record_resolved_failure(request, _failure_code(error)),
+            await _record_protected_failure(request, _failure_code(error)),
         )
 
     @app.exception_handler(HTTPException)
@@ -635,20 +698,13 @@ def create_app(
     ) -> JSONResponse:
         return _protected_safe_error_response(
             request,
-            await _record_resolved_failure(request, _http_failure_code(error)),
+            await _record_protected_failure(request, _http_failure_code(error)),
         )
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         """Report public process liveness without checking dependencies."""
         return {"status": "ok"}
-
-    @app.post("/internal/v1/mcp/session-admissions", status_code=204)
-    async def admit_mcp_session(
-        _: Annotated[ProtectedOperation, Depends(get_protected_operation)],
-    ) -> Response:
-        """Admit an adapter MCP session without exposing the resolved principal."""
-        return Response(status_code=204)
 
     @app.get("/api/v1/me/attendance-events")
     async def get_my_attendance_events(

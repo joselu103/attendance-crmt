@@ -1,5 +1,4 @@
 import pytest
-from fastmcp.exceptions import ToolError
 from pydantic import ValidationError
 
 from attendance_crmt.security_errors import (
@@ -20,7 +19,6 @@ def test_security_failure_derives_the_canonical_safe_response() -> None:
         code="FORBIDDEN",
         message=FORBIDDEN_MESSAGE,
     )
-    assert isinstance(failure.as_tool_error(), ToolError)
 
 
 def test_security_failure_keeps_actor_context_out_of_public_response() -> None:

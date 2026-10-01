@@ -18,7 +18,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ATTENDANCE_DB_URL_ENV = "ATTENDANCE_DATABASE_URL"
 AUDIT_DB_PATH_ENV = "ATTENDANCE_AUDIT_DATABASE_PATH"
-MCP_BASE_URL_ENV = "ATTENDANCE_MCP_BASE_URL"
+SERVICE_BASE_URL_ENV = "ATTENDANCE_SERVICE_BASE_URL"
 ENTRA_TENANT_ID_ENV = "ATTENDANCE_ENTRA_TENANT_ID"
 ENTRA_ISSUER_ENV = "ATTENDANCE_ENTRA_ISSUER"
 ENTRA_OPENID_CONFIGURATION_URL_ENV = "ATTENDANCE_ENTRA_OPENID_CONFIGURATION_URL"
@@ -32,12 +32,12 @@ ENTRA_EMAIL_ALIASES_ENV = "ATTENDANCE_ENTRA_EMAIL_ALIASES"
 NonBlankStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
-class EntraMcpAuthenticationSettings(BaseModel):
-    """Immutable settings required to validate Entra tokens for the MCP API."""
+class EntraAuthenticationSettings(BaseModel):
+    """Immutable settings required to validate delegated REST credentials."""
 
     model_config = ConfigDict(frozen=True)
 
-    mcp_base_url: AnyHttpUrl
+    service_base_url: AnyHttpUrl
     tenant_id: UUID
     issuer: AnyHttpUrl
     openid_configuration_url: AnyHttpUrl
@@ -58,15 +58,13 @@ class Settings(BaseSettings):
         frozen=True,
     )
 
-    server_name: str = "attendance-crmt"
-    server_instructions: str = "Interact with the CRMT attendance system."
     environment: Literal["development", "staging", "production"] = "development"
     attendance_db_url: str = Field(validation_alias=ATTENDANCE_DB_URL_ENV)
     audit_db_path: Path = Field(
         default=Path("data/audit.sqlite3"),
         validation_alias=AUDIT_DB_PATH_ENV,
     )
-    mcp_base_url: AnyHttpUrl = Field(validation_alias=MCP_BASE_URL_ENV)
+    service_base_url: AnyHttpUrl = Field(validation_alias=SERVICE_BASE_URL_ENV)
     entra_tenant_id: UUID = Field(validation_alias=ENTRA_TENANT_ID_ENV)
     entra_issuer: AnyHttpUrl = Field(validation_alias=ENTRA_ISSUER_ENV)
     entra_openid_configuration_url: AnyHttpUrl = Field(
@@ -98,7 +96,7 @@ class Settings(BaseSettings):
     @field_validator("entra_allowed_client_ids")
     @classmethod
     def require_allowed_client(cls, value: frozenset[UUID]) -> frozenset[UUID]:
-        """Require at least one explicitly approved MCP client application."""
+        """Require at least one explicitly approved REST client application."""
         if not value:
             raise ValueError("at least one allowed client ID is required")
         return value
@@ -128,7 +126,7 @@ class Settings(BaseSettings):
         """Keep identity metadata on one authority and require HTTPS in production."""
         if self.environment == "production":
             urls = (
-                self.mcp_base_url,
+                self.service_base_url,
                 self.entra_issuer,
                 self.entra_openid_configuration_url,
             )
@@ -145,10 +143,10 @@ class Settings(BaseSettings):
         return self
 
     @property
-    def entra_mcp_authentication(self) -> EntraMcpAuthenticationSettings:
+    def entra_authentication(self) -> EntraAuthenticationSettings:
         """Return the cohesive token-validation settings value object."""
-        return EntraMcpAuthenticationSettings(
-            mcp_base_url=self.mcp_base_url,
+        return EntraAuthenticationSettings(
+            service_base_url=self.service_base_url,
             tenant_id=self.entra_tenant_id,
             issuer=self.entra_issuer,
             openid_configuration_url=self.entra_openid_configuration_url,

@@ -1,1 +1,1 @@
-"""Catalog feature: employee discovery MCP tool registrations."""
+"""Catalog feature queries and REST response contracts."""

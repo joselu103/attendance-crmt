@@ -1,1 +1,1 @@
-"""Attendance feature: queries and MCP tool registrations."""
+"""Attendance feature queries and REST response contracts."""

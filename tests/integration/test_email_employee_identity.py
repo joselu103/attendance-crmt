@@ -1,9 +1,9 @@
 from typing import Any, Self
 
 import pytest
-from fastmcp.server.auth import AccessToken
 from sqlalchemy.exc import OperationalError
 
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.identity import (
     AuthenticatedTokenRequesterResolver,
     EmailIdentityAmbiguousError,
@@ -76,12 +76,11 @@ def _access_token(
     *,
     email: str = "person@example.com",
     roles: Any = None,
-) -> AccessToken:
-    return AccessToken(
+) -> VerifiedDelegatedAccessToken:
+    return VerifiedDelegatedAccessToken(
         token="validated-test-token",
         client_id="22222222-2222-2222-2222-222222222222",
         scopes=["attendance.access"],
-        subject="11111111-1111-1111-1111-111111111111:33333333-3333-3333-3333-333333333333",
         claims={
             "tid": "11111111-1111-1111-1111-111111111111",
             "oid": "33333333-3333-3333-3333-333333333333",
@@ -94,12 +93,11 @@ def _access_token(
 def _authenticated_resolver(
     *,
     employee_session_factory,
-    access_token: AccessToken | None,
+    access_token: VerifiedDelegatedAccessToken | None,
 ) -> AuthenticatedTokenRequesterResolver:
     return AuthenticatedTokenRequesterResolver(
         session_factory=employee_session_factory,
         admin_role="attendance.admin",
-        access_token_provider=lambda: access_token,
     )
 
 
@@ -123,7 +121,9 @@ def test_authenticated_requester_maps_validated_claims_to_active_employee(
         ),
     )
 
-    requester = resolver.resolve(context=None)
+    requester = resolver.resolve_access_token(
+        _access_token(email="  PERSON@example.com  ", roles=["attendance.admin"])
+    )
 
     assert requester.actor_id == (
         "11111111-1111-1111-1111-111111111111:33333333-3333-3333-3333-333333333333"
@@ -152,12 +152,11 @@ def test_authenticated_requester_maps_configured_entra_email_alias_to_employee(
                 "joseluiscc103@gmail.com"
             )
         },
-        access_token_provider=lambda: _access_token(
-            email="JoseLuisCambil@AttendanceCRMTDevelopment.onmicrosoft.com"
-        ),
     )
 
-    requester = resolver.resolve(context=None)
+    requester = resolver.resolve_access_token(
+        _access_token(email="JoseLuisCambil@AttendanceCRMTDevelopment.onmicrosoft.com")
+    )
 
     assert requester.employee_id == 42
     assert requester.roles == frozenset({"employee"})
@@ -178,7 +177,7 @@ def test_authenticated_requester_does_not_trust_malformed_or_similar_admin_role(
         access_token=_access_token(roles=roles),
     )
 
-    requester = resolver.resolve(context=None)
+    requester = resolver.resolve_access_token(_access_token(roles=roles))
 
     assert requester.roles == frozenset({"employee"})
 
@@ -192,9 +191,11 @@ def test_authenticated_requester_returns_identity_unmapped(
     )
 
     with pytest.raises(SecurityFailure) as error:
-        resolver.resolve(context=None)
+        resolver.resolve_access_token(_access_token())
 
-    assert error.value.actor_id == _access_token().subject
+    assert error.value.actor_id == (
+        "11111111-1111-1111-1111-111111111111:33333333-3333-3333-3333-333333333333"
+    )
     assert error.value.code == "IDENTITY_UNMAPPED"
     assert error.value.response.model_dump(mode="json") == {
         "code": "IDENTITY_UNMAPPED",
@@ -222,13 +223,14 @@ def test_authenticated_requester_returns_backend_unavailable_for_database_failur
     resolver = AuthenticatedTokenRequesterResolver(
         session_factory=lambda: FailingEmployeeSession(),  # type: ignore[arg-type]
         admin_role="attendance.admin",
-        access_token_provider=_access_token,
     )
 
     with pytest.raises(SecurityFailure) as error:
-        resolver.resolve(context=None)
+        resolver.resolve_access_token(_access_token())
 
-    assert error.value.actor_id == _access_token().subject
+    assert error.value.actor_id == (
+        "11111111-1111-1111-1111-111111111111:33333333-3333-3333-3333-333333333333"
+    )
     assert error.value.code == "BACKEND_UNAVAILABLE"
     assert error.value.response.model_dump(mode="json") == {
         "code": "BACKEND_UNAVAILABLE",
@@ -251,7 +253,7 @@ def test_authenticated_requester_returns_identity_ambiguous(
     )
 
     with pytest.raises(SecurityFailure) as error:
-        resolver.resolve(context=None)
+        resolver.resolve_access_token(_access_token())
 
     assert error.value.response.model_dump(mode="json") == {
         "code": "IDENTITY_AMBIGUOUS",
@@ -264,13 +266,13 @@ def test_authenticated_requester_returns_identity_ambiguous(
     [
         None,
         _access_token(email="   "),
-        AccessToken(
+        VerifiedDelegatedAccessToken(
             token="validated-test-token",
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
             claims={"preferred_username": "person@example.com"},
         ),
-        AccessToken(
+        VerifiedDelegatedAccessToken(
             token="validated-test-token",
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -280,7 +282,7 @@ def test_authenticated_requester_returns_identity_ambiguous(
                 "preferred_username": "person@example.com",
             },
         ),
-        AccessToken(
+        VerifiedDelegatedAccessToken(
             token="validated-test-token",
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -294,7 +296,7 @@ def test_authenticated_requester_returns_identity_ambiguous(
 )
 def test_authenticated_requester_rejects_missing_validated_identity_claims(
     employee_session_factory,
-    access_token: AccessToken | None,
+    access_token: VerifiedDelegatedAccessToken | None,
 ) -> None:
     resolver = _authenticated_resolver(
         employee_session_factory=employee_session_factory,
@@ -302,7 +304,7 @@ def test_authenticated_requester_rejects_missing_validated_identity_claims(
     )
 
     with pytest.raises(SecurityFailure) as error:
-        resolver.resolve(context=None)
+        resolver.resolve_access_token(access_token)
 
     assert error.value.response.model_dump(mode="json") == {
         "code": "TOKEN_INVALID",

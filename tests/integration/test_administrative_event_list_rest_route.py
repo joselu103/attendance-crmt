@@ -6,11 +6,11 @@ from dataclasses import replace
 from datetime import date, datetime
 
 import httpx
-from fastmcp.server.auth import AccessToken
 
 from attendance_crmt.attendance.contracts import AttendanceEventQuery
 from attendance_crmt.attendance.services import list_attendance_events
 from attendance_crmt.audit import AuditEvent
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver, Principal
 from attendance_crmt.models import AttendanceLog
 from attendance_crmt.rest import create_app
@@ -25,10 +25,10 @@ class StaticTokenVerifier:
     def __init__(self, *, roles: list[str]) -> None:
         self._roles = roles
 
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         if token != "delegated-token":
             return None
-        return AccessToken(
+        return VerifiedDelegatedAccessToken(
             token=token,
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -69,7 +69,6 @@ def _app(server_dependencies, *, roles: list[str]):
             server_dependencies,
             auth_provider=StaticTokenVerifier(roles=roles),  # type: ignore[arg-type]
             principal_resolver=resolver,
-            requester_resolver=resolver,
         )
     )
 
@@ -199,4 +198,8 @@ def test_administrator_event_list_rejects_missing_correlation_before_access(
         "message": "The request correlation ID is missing or invalid.",
     }
     with audit_session_factory() as session:
-        assert session.query(AuditEvent).count() == 0
+        event = session.query(AuditEvent).one()
+    assert event.actor_id == "unresolved"
+    assert event.tool_name == "rest:/api/v1/employees/{employee_id}/attendance-events"
+    assert event.request_json == "{}"
+    assert event.error_code == "CORRELATION_ID_INVALID"

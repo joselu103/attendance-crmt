@@ -3,14 +3,12 @@
   "status": "blocked",
   "provided_exports": {
     "interfaces_or_endpoints": [
-      "Attendance CRMT MCP contract 1.2.0 source: list_my_attendance_events(start_date, end_date, limit=50, offset=0) -> AttendanceEventPage; server-derived employee; inclusive max 31 days",
-      "Public liveness contract: GET /health -> 200 {\"status\":\"ok\"}; liveness only, not database, Entra, or MCP readiness",
+      "Public liveness contract: GET /health -> 200 {\"status\":\"ok\"}; liveness only, not database, Entra, or audit readiness",
       "REST shell: attendance_crmt.rest.create_app(dependencies=None) -> FastAPI exposes only public GET /health -> 200 {\"status\":\"ok\"} without accessing injected dependencies",
       "REST v1 protected GET /api/v1/me/attendance-events?start_date=&end_date=&limit=50&offset=0 -> requester-scoped AttendanceEventPage; server-derived employee; delegated bearer and UUID correlation required; inclusive max 31 days; correlation-linked safe audit outcome",
       "REST v1 protected GET /api/v1/me/attendance-events/latest -> requester-scoped most recent AttendanceEventSummary or safe NOT_FOUND; server-derived employee, delegated bearer, UUID correlation, and correlation-linked safe audit outcome",
       "REST v1 protected GET /api/v1/me/attendance-summary?start_date=&end_date= -> requester-scoped aggregate for an inclusive maximum 366-calendar-day period; completed positive intervals are clipped to the period and return total recorded hours, attendance-day count, and monthly/location breakdowns with delegated bearer, UUID correlation, and correlation-linked safe audit outcome",
-      "Production ASGI composition serves the REST application at the root while preserving the embedded FastMCP compatibility bridge at /mcp with its original lifespan and MCP contract header",
-      "Private REST MCP session admission: POST /internal/v1/mcp/session-admissions -> 204 only after CRMT validates the forwarded delegated bearer, server-derived requester mapping, and UUID correlation ID; no principal or sensitive data exposed; safe credential/correlation outcomes and correlation-linked audit preserved",
+      "Production ASGI composition serves only the protected REST application; direct POST /mcp returns 404 and no session-admission route exists",
       "REST v1 protected catalog reads: GET /api/v1/employees?limit=50&offset=0, GET /api/v1/employees/{employee_id}, GET /api/v1/punch-types?active_only=true, and GET /api/v1/locations -> established immutable catalog responses; delegated bearer and UUID correlation required; correlation-linked safe audit outcome",
       "REST v1 protected reporting reads: GET /api/v1/attendance/current, GET /api/v1/employees/{employee_id}/attendance-summary, GET /api/v1/employees/{employee_id}/attendance-analysis, GET /api/v1/attendance/organization-analysis, and GET /api/v1/attendance/exceptions; delegated bearer and UUID correlation required; existing authorization, bounded date-range/pagination, result serialization, safe errors, and correlation-linked audits preserved",
       "REST v1 workforce status: GET /api/v1/attendance/current remains available to delegated authenticated employees; omitted as_of uses server Europe/Ljubljana local time, accepts only office, remote, customer_site, break, absence, or no_status filters, omits unknown states before pagination, and preserves correlation-linked safe audits",
@@ -18,11 +16,11 @@
       "REST v1 protected admin reads: GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=50&offset=0, GET /api/v1/attendance-events/{attendance_event_id}, GET /api/v1/employees/{employee_id}/daily-attendance?day=, and GET /api/v1/employees/{employee_id}/planned-work?start_date=&end_date=; existing authorization, bounds, response semantics, UUID correlation, and safe audit outcomes preserved",
       "REST v1 privileged employee resolver: GET /api/v1/employees/resolve?employee_id=&username=&email= is registered before the employee-id route; administrators must supply exactly one exact identifier and receive a directory-safe EmployeeSummary or safe INVALID_ARGUMENT, NOT_FOUND, or FORBIDDEN with correlation-linked auditing",
       "Read-only aggregate active-email readiness command: attendance-crmt-check-active-emails",
-      "Safe non-production verifier commands: attendance-crmt-verify-deployment and attendance-crmt-verify-audit",
       "Reproducible local OCI artifact: source revision 33f0a3c9d5b719aa84a831bb6402800302359fa3; local digest attendance-crmt@sha256:0f994f5344989ea96fa5ba2dae4fe20066601b0dc24505ee31820a31668e7a0b; OCI revision label verified equal to that source revision",
       "Environment-aware structured logging: development emits colored DEBUG console logs; staging and production emit single-line INFO JSON to stdout with UTC timestamp, level, logger, and module/file/line callsite metadata; common sensitive fields are recursively redacted without mutating the source event payload",
       "REST lifecycle instrumentation: every request emits one request_received and one request_completed or request_failed event with generated trace ID, validated correlation when present, route template, status/state, and duration; protected operations emit safe start, step, success, or failure events with handler identity, empty sanitized inputs, correlation, duration, and stable error code",
-      "MCP tool lifecycle instrumentation: every registered tool invocation emits safe start and step events followed by one success or failure event with tool handler identity, correlation ID, monotonic duration, empty sanitized inputs, and a stable safe error code when known; durable audit records and client-facing MCP errors remain unchanged"
+      "Protected REST audit completeness: every protected request, including early correlation, bearer, identity-mapping, and validation rejections, durably records exactly one safe outcome; unresolved failures use the non-sensitive unresolved actor marker, route template, empty request details, safe error code, and a generated UUID correlation when the client value is absent or invalid, while public GET /health remains operational-log-only",
+      "REST v1 contract 1.0.0 documents the protected operation inventory, delegated bearer and UUID correlation requirements, safe error codes, and adapter-facing boundary"
     ],
     "events": []
   },
@@ -32,7 +30,7 @@
       "Approved Teams bot delegated permission, OBO consent, and production certificate configuration"
     ],
     "deployment": [
-      "Authorized platform owner, non-production HTTPS /mcp hostname, approved Container App resource boundary, runtime secret injection, and persistent audit storage",
+      "Authorized platform owner, non-production HTTPS REST hostname, approved Container App resource boundary, runtime secret injection, and persistent audit storage",
       "CI-published source-identifiable CRMT container image digest; local-only image digest is not deployable registry evidence"
     ],
     "database": [
@@ -41,10 +39,10 @@
     ]
   },
   "open_issues_or_blockers": [
-    "No verified non-production HTTPS /mcp deployment implementing contract 1.2.0 exists.",
+    "No verified non-production HTTPS REST deployment exists.",
     "No verified Attendance CRMT Entra API registration exposing attendance.access exists.",
     "No verified CI-published immutable registry digest exists for the reviewed source revision.",
     "Production active-email uniqueness readiness check has not run against the authoritative SQL Server database.",
-    "Real Teams attendance traffic remains disabled until Entra, OBO, certificate, deployed HTTPS MCP, runtime secret/database/audit prerequisites, production data-quality, and end-to-end requester/audit verification pass."
+    "Real client traffic remains disabled until Entra, approved client delegation, certificate, deployed HTTPS REST, runtime secret/database/audit prerequisites, production data-quality, and end-to-end requester/audit verification pass."
   ]
 }
