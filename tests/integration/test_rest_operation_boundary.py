@@ -6,14 +6,20 @@ from dataclasses import replace
 from typing import Annotated
 
 import httpx
+import pytest
 from fastapi import Depends
-from fastmcp.server.auth import AccessToken
 from starlette.exceptions import HTTPException
 from structlog.testing import capture_logs
 
 from attendance_crmt.audit import AuditEvent
-from attendance_crmt.identity import AuthenticatedTokenRequesterResolver
-from attendance_crmt.rest import ProtectedOperation, create_app, get_protected_operation
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
+from attendance_crmt.identity import AuthenticatedTokenRequesterResolver, Principal
+from attendance_crmt.rest import (
+    ProtectedOperation,
+    create_app,
+    get_principal,
+    get_protected_operation,
+)
 from attendance_crmt.security_errors import SecurityFailure
 
 CORRELATION_ID = "11111111-1111-1111-1111-111111111111"
@@ -22,10 +28,10 @@ CORRELATION_ID = "11111111-1111-1111-1111-111111111111"
 class StaticTokenVerifier:
     """Return one already verified delegated token."""
 
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         if token != "delegated-token":
             return None
-        return AccessToken(
+        return VerifiedDelegatedAccessToken(
             token=token,
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -64,7 +70,6 @@ def _protected_app(server_dependencies, employee_factory, *, audit_log=None):
             server_dependencies,
             auth_provider=StaticTokenVerifier(),  # type: ignore[arg-type]
             principal_resolver=resolver,
-            requester_resolver=resolver,
             **({"audit_log": audit_log} if audit_log is not None else {}),
         )
     )
@@ -114,6 +119,19 @@ def _headers() -> list[tuple[str, str]]:
         ("Authorization", "Bearer delegated-token"),
         ("X-Correlation-ID", CORRELATION_ID),
     ]
+
+
+def _validate_page(page: int) -> int:
+    """Validate a protected request's query parameter."""
+    return page
+
+
+async def _principal_after_page_validation(
+    _: Annotated[int, Depends(_validate_page)],
+    principal: Annotated[Principal, Depends(get_principal)],
+) -> Principal:
+    """Use validated input before continuing through principal resolution."""
+    return principal
 
 
 def test_protected_rest_operation_records_one_correlation_linked_success(
@@ -242,7 +260,156 @@ def test_protected_rest_operation_rejects_missing_correlation_before_execution(
         "message": "The request correlation ID is missing or invalid.",
     }
     with audit_session_factory() as session:
-        assert session.query(AuditEvent).count() == 0
+        events = session.query(AuditEvent).all()
+    assert len(events) == 1
+    assert events[0].actor_id == "unresolved"
+    assert events[0].correlation_id != CORRELATION_ID
+    assert events[0].tool_name == "rest:/protected"
+    assert events[0].request_json == "{}"
+    assert events[0].outcome == "failure"
+    assert events[0].error_code == "CORRELATION_ID_INVALID"
+
+
+@pytest.mark.parametrize(
+    ("headers", "code"),
+    [
+        (
+            [
+                ("Authorization", "Bearer delegated-token"),
+                ("X-Correlation-ID", "not-a-uuid"),
+            ],
+            "CORRELATION_ID_INVALID",
+        ),
+        (
+            [
+                ("Authorization", "Bearer delegated-token"),
+                ("X-Correlation-ID", CORRELATION_ID),
+                ("X-Correlation-ID", CORRELATION_ID),
+            ],
+            "CORRELATION_ID_INVALID",
+        ),
+        ([("X-Correlation-ID", CORRELATION_ID)], "AUTHENTICATION_REQUIRED"),
+        (
+            [("Authorization", "Basic token"), ("X-Correlation-ID", CORRELATION_ID)],
+            "TOKEN_INVALID",
+        ),
+        (
+            [
+                ("Authorization", "Bearer invalid-token"),
+                ("X-Correlation-ID", CORRELATION_ID),
+            ],
+            "TOKEN_INVALID",
+        ),
+    ],
+    ids=(
+        "malformed-correlation",
+        "duplicate-correlation",
+        "missing-bearer",
+        "malformed-bearer",
+        "invalid-bearer",
+    ),
+)
+def test_protected_rest_early_rejections_are_audited_once(
+    server_dependencies,
+    employee_factory,
+    audit_session_factory,
+    headers: list[tuple[str, str]],
+    code: str,
+) -> None:
+    response = _get(
+        _protected_app(server_dependencies, employee_factory),
+        "/protected",
+        headers=headers,
+    )
+
+    assert response.json()["code"] == code
+    with audit_session_factory() as session:
+        events = session.query(AuditEvent).all()
+    assert len(events) == 1
+    assert events[0].actor_id == "unresolved"
+    assert events[0].employee_id is None
+    assert events[0].roles_json == "[]"
+    assert events[0].tool_name == "rest:/protected"
+    assert events[0].request_json == "{}"
+    assert events[0].outcome == "failure"
+    assert events[0].error_code == code
+    if code == "CORRELATION_ID_INVALID":
+        assert events[0].correlation_id != CORRELATION_ID
+    else:
+        assert events[0].correlation_id == CORRELATION_ID
+
+
+def test_protected_request_validation_failure_is_audited(
+    server_dependencies, employee_factory, audit_session_factory
+) -> None:
+    app = _protected_app(server_dependencies, employee_factory)
+
+    @app.get("/validated-before-principal")
+    async def validated_before_principal_route(
+        _: Annotated[Principal, Depends(_principal_after_page_validation)],
+    ) -> dict[str, str]:
+        return {"status": "ok"}
+
+    response = _get(
+        app,
+        "/validated-before-principal?page=not-an-integer",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 400
+    with audit_session_factory() as session:
+        event = session.query(AuditEvent).one()
+    assert event.tool_name == "rest:/validated-before-principal"
+    assert event.request_json == "{}"
+    assert event.error_code == "INVALID_ARGUMENT"
+
+
+def test_identity_mapping_failure_before_principal_is_audited(
+    server_dependencies, audit_session_factory
+) -> None:
+    resolver = AuthenticatedTokenRequesterResolver(
+        session_factory=server_dependencies.attendance_session_factory,
+        admin_role="attendance.admin",
+    )
+    app = create_app(
+        replace(
+            server_dependencies,
+            auth_provider=StaticTokenVerifier(),  # type: ignore[arg-type]
+            principal_resolver=resolver,
+        )
+    )
+
+    @app.get("/identity-mapping")
+    async def identity_mapping_route(
+        _: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+    ) -> dict[str, str]:
+        return {"status": "ok"}
+
+    response = _get(app, "/identity-mapping", headers=_headers())
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "IDENTITY_UNMAPPED"
+    with audit_session_factory() as session:
+        event = session.query(AuditEvent).one()
+    assert event.actor_id == "unresolved"
+    assert event.tool_name == "rest:/identity-mapping"
+    assert event.request_json == "{}"
+    assert event.error_code == "IDENTITY_UNMAPPED"
+
+
+def test_early_protected_rejection_fails_closed_when_audit_persistence_fails(
+    server_dependencies, employee_factory
+) -> None:
+    response = _get(
+        _protected_app(
+            server_dependencies, employee_factory, audit_log=FailingAuditLog()
+        ),
+        "/protected",
+        headers=[("X-Correlation-ID", CORRELATION_ID)],
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "BACKEND_UNAVAILABLE"
 
 
 def test_protected_rest_validation_failure_hides_raw_input(
@@ -273,11 +440,15 @@ def test_protected_rest_dependency_failure_hides_verifier_diagnostics(
     server_dependencies,
 ) -> None:
     class FailingTokenVerifier:
-        async def verify_token(self, _token: str) -> AccessToken | None:
+        async def verify_token(
+            self, _token: str
+        ) -> VerifiedDelegatedAccessToken | None:
             raise RuntimeError("token=secret claims={} https://database.example")
 
     class UnusedPrincipalResolver:
-        def resolve_access_token(self, _access_token: AccessToken | None):
+        def resolve_access_token(
+            self, _access_token: VerifiedDelegatedAccessToken | None
+        ):
             raise AssertionError("the verifier failure must stop principal resolution")
 
     app = create_app(

@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
-from fastmcp.server.auth import AccessToken
-from fastmcp.server.dependencies import get_access_token
 from sqlalchemy import func, select
 from sqlalchemy.exc import MultipleResultsFound, NoResultFound, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.models import Employee
 from attendance_crmt.security_errors import SecurityErrorCode, SecurityFailure
 
@@ -28,8 +27,6 @@ class Principal:
     auth_method: str = "delegated_bearer"
 
 
-# Existing application services use the migration-era name.  Keep it as a
-# compatibility alias while REST and MCP converge on the Principal boundary.
 Requester = Principal
 
 
@@ -44,38 +41,12 @@ class PrincipalResolver(Protocol):
         ...
 
 
-class VerifiedDelegatedAccessToken(Protocol):
-    """The trusted token facts needed for transport-neutral principal derivation."""
-
-    client_id: str
-    claims: Mapping[str, Any]
-
-
-class RequesterResolver(Protocol):
-    """Resolve the requester for the current transport context."""
-
-    def resolve(self, context: Any) -> Principal:
-        """Return the requester identity for one tool invocation."""
-        ...
-
-
 class EmailIdentityUnmappedError(LookupError):
     """Raised when no active employee matches a validated Teams email."""
 
 
 class EmailIdentityAmbiguousError(LookupError):
     """Raised when multiple active employees match a validated Teams email."""
-
-
-@dataclass(frozen=True)
-class StaticRequesterResolver:
-    """Development-only resolver until transport authentication is available."""
-
-    requester: Principal
-
-    def resolve(self, context: Any) -> Principal:
-        """Return the configured MVP requester identity."""
-        return self.requester
 
 
 def normalized_active_employee_email_expression():
@@ -113,16 +84,11 @@ def resolve_active_employee_id_for_email(
 
 @dataclass(frozen=True)
 class DelegatedPrincipalResolver:
-    """Derive one principal from a verified token; adapt FastMCP only at the edge."""
+    """Derive one principal from a verified delegated token."""
 
     session_factory: sessionmaker[Session]
     admin_role: str
     email_aliases: Mapping[str, str] = field(default_factory=dict)
-    access_token_provider: Callable[[], AccessToken | None] = get_access_token
-
-    def resolve(self, context: Any) -> Principal:
-        """Adapt FastMCP's request-local token to the shared principal boundary."""
-        return self.resolve_access_token(self.access_token_provider())
 
     def resolve_access_token(
         self, access_token: VerifiedDelegatedAccessToken | None
@@ -191,6 +157,4 @@ class DelegatedPrincipalResolver:
         return SecurityFailure(code="TOKEN_INVALID")
 
 
-# Temporary MCP bridge compatibility. New REST composition uses the principal
-# terminology above; legacy tool registrations retain their established import.
 AuthenticatedTokenRequesterResolver = DelegatedPrincipalResolver

@@ -1,11 +1,16 @@
-"""Attendance CRMT FastMCP server package."""
+"""Attendance CRMT protected REST authority."""
 
 
 def main() -> None:
-    """Run the production FastMCP server through stdio."""
-    from attendance_crmt.server import create_production_server
+    """Run the production REST application."""
+    import uvicorn
 
-    create_production_server().run(transport="stdio")
+    uvicorn.run(
+        "attendance_crmt.server:create_production_http_app",
+        factory=True,
+        host="0.0.0.0",
+        port=8000,
+    )
 
 
 __all__ = ["main"]

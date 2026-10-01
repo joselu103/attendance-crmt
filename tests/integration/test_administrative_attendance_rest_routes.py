@@ -7,9 +7,9 @@ from decimal import Decimal
 
 import httpx
 import pytest
-from fastmcp.server.auth import AccessToken
 
 from attendance_crmt.audit import AuditEvent
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver
 from attendance_crmt.models import AttendanceLog, PlannedWork
 from attendance_crmt.rest import create_app
@@ -28,10 +28,10 @@ class StaticTokenVerifier:
     def __init__(self, *, roles: list[str]) -> None:
         self._roles = roles
 
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         if token != "delegated-token":
             return None
-        return AccessToken(
+        return VerifiedDelegatedAccessToken(
             token=token,
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -71,7 +71,6 @@ def _app(server_dependencies, *, roles: list[str]):
             server_dependencies,
             auth_provider=StaticTokenVerifier(roles=roles),  # type: ignore[arg-type]
             principal_resolver=resolver,
-            requester_resolver=resolver,
         )
     )
 

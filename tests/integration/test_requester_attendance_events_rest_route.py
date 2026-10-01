@@ -6,11 +6,11 @@ from dataclasses import replace
 from datetime import date, datetime
 
 import httpx
-from fastmcp.server.auth import AccessToken
 
 from attendance_crmt.attendance.contracts import MyAttendanceEventQuery
 from attendance_crmt.attendance.services import list_my_attendance_events
 from attendance_crmt.audit import AuditEvent
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver, Principal
 from attendance_crmt.models import AttendanceLog
 from attendance_crmt.rest import create_app
@@ -22,10 +22,10 @@ ROUTE = "/api/v1/me/attendance-events"
 class StaticTokenVerifier:
     """Return one already-verified delegated user token."""
 
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         if token != "delegated-token":
             return None
-        return AccessToken(
+        return VerifiedDelegatedAccessToken(
             token=token,
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -66,7 +66,6 @@ def _app(server_dependencies):
             server_dependencies,
             auth_provider=StaticTokenVerifier(),  # type: ignore[arg-type]
             principal_resolver=resolver,
-            requester_resolver=resolver,
         )
     )
 
@@ -200,7 +199,11 @@ def test_requester_events_require_a_delegated_bearer_before_access(
         "message": "Please sign in to use Attendance.",
     }
     with audit_session_factory() as session:
-        assert session.query(AuditEvent).count() == 0
+        event = session.query(AuditEvent).one()
+    assert event.actor_id == "unresolved"
+    assert event.tool_name == f"rest:{ROUTE}"
+    assert event.request_json == "{}"
+    assert event.error_code == "AUTHENTICATION_REQUIRED"
 
 
 def test_requester_events_reject_invalid_correlation_before_access(
@@ -223,4 +226,8 @@ def test_requester_events_reject_invalid_correlation_before_access(
         "message": "The request correlation ID is missing or invalid.",
     }
     with audit_session_factory() as session:
-        assert session.query(AuditEvent).count() == 0
+        event = session.query(AuditEvent).one()
+    assert event.actor_id == "unresolved"
+    assert event.tool_name == f"rest:{ROUTE}"
+    assert event.request_json == "{}"
+    assert event.error_code == "CORRELATION_ID_INVALID"

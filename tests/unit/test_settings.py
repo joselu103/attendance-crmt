@@ -6,13 +6,13 @@ from pydantic import ValidationError
 from attendance_crmt.settings import Settings
 
 
-def test_settings_build_typed_entra_mcp_authentication() -> None:
+def test_settings_build_typed_entra_authentication() -> None:
     settings = Settings(_env_file=None)
 
-    authentication = settings.entra_mcp_authentication
+    authentication = settings.entra_authentication
 
     assert authentication.tenant_id == UUID("11111111-1111-1111-1111-111111111111")
-    assert str(authentication.mcp_base_url) == "http://localhost:8000/"
+    assert str(authentication.service_base_url) == "http://localhost:8000/"
     assert authentication.audience == "api://attendance-crmt-test"
     assert authentication.allowed_client_ids == frozenset(
         {UUID("22222222-2222-2222-2222-222222222222")}
@@ -51,7 +51,7 @@ def test_settings_normalize_explicit_entra_email_aliases(monkeypatch) -> None:
 @pytest.mark.parametrize(
     "name,value",
     [
-        ("ATTENDANCE_MCP_BASE_URL", "http://attendance.example.com"),
+        ("ATTENDANCE_SERVICE_BASE_URL", "http://attendance.example.com"),
         (
             "ATTENDANCE_ENTRA_ISSUER",
             "http://login.microsoftonline.com/tenant/v2.0",

@@ -5,9 +5,9 @@ from dataclasses import replace
 from datetime import datetime
 
 import httpx
-from fastmcp.server.auth import AccessToken
 
 from attendance_crmt.audit import AuditEvent
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver
 from attendance_crmt.models import AttendanceLog, Location
 from attendance_crmt.rest import create_app
@@ -20,10 +20,10 @@ SUMMARY_ROUTE = "/api/v1/me/attendance-summary"
 class StaticTokenVerifier:
     """Return one verified delegated user token for the requester."""
 
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         if token != "delegated-token":
             return None
-        return AccessToken(
+        return VerifiedDelegatedAccessToken(
             token=token,
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -63,7 +63,6 @@ def _app(server_dependencies):
             server_dependencies,
             auth_provider=StaticTokenVerifier(),  # type: ignore[arg-type]
             principal_resolver=resolver,
-            requester_resolver=resolver,
         )
     )
 

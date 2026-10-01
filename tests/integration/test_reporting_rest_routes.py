@@ -7,7 +7,6 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import httpx
-from fastmcp.server.auth import AccessToken
 from sqlalchemy import event
 
 from attendance_crmt.attendance.contracts import (
@@ -23,6 +22,7 @@ from attendance_crmt.attendance.services import (
     get_organization_attendance_analysis,
     list_current_attendance,
 )
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver, Principal
 from attendance_crmt.models import AttendanceLog, PlannedWork, PunchType
 from attendance_crmt.rest import create_app
@@ -33,10 +33,10 @@ CORRELATION_ID = "11111111-1111-1111-1111-111111111111"
 class StaticTokenVerifier:
     """Return a verified delegated token with the requested administrative role."""
 
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         if token not in {"admin-token", "employee-token"}:
             return None
-        return AccessToken(
+        return VerifiedDelegatedAccessToken(
             token=token,
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -76,7 +76,6 @@ def _app(server_dependencies):
             server_dependencies,
             auth_provider=StaticTokenVerifier(),  # type: ignore[arg-type]
             principal_resolver=resolver,
-            requester_resolver=resolver,
         )
     )
 

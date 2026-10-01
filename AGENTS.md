@@ -1,8 +1,7 @@
 # Attendance CRMT REST Core
 
 Attendance CRMT is the protected REST authority for attendance identity,
-authorization, audit, rules, and SQL Server access; the embedded FastMCP runtime
-is a temporary compatibility bridge.
+authorization, audit, rules, and SQL Server access.
 
 **Output Rule:** Wait for operations to finish. On success, output ONLY 3-5 bullet points summarizing results. No diffs, code dumps, or long explanations. (Details: `docs/agent-guidance/response-guide.md`)
 
@@ -21,7 +20,6 @@ Load task-specific guidance:
 - [Service boundary and invariants](docs/agent-guidance/service-boundary.md)
 - [REST migration and compatibility](docs/agent-guidance/rest-migration.md)
 - [Verification and state](docs/agent-guidance/verification-and-state.md)
-- [Existing integration references](docs/integrations/teams-bot-mcp-auth-contract.md)
 
 ## Agent skills
 

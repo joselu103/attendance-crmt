@@ -1,9 +1,7 @@
-"""Stable, safe security error contracts shared across transport boundaries."""
+"""Stable, safe security error contracts for REST operations."""
 
-import json
 from typing import Literal
 
-from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, model_validator
 
 AUTHENTICATION_REQUIRED_MESSAGE = "Please sign in to use Attendance."
@@ -66,8 +64,8 @@ SECURITY_ERROR_STATUS_CODES: dict[SecurityErrorCode, int] = {
 }
 
 
-class SecurityFailure(ToolError):
-    """Typed security failure that serializes only at the FastMCP boundary."""
+class SecurityFailure(Exception):
+    """Typed internal failure with a fixed public REST representation."""
 
     def __init__(
         self,
@@ -77,12 +75,7 @@ class SecurityFailure(ToolError):
     ) -> None:
         self.code: SecurityErrorCode = code
         self.actor_id = actor_id
-        super().__init__(
-            json.dumps(
-                {"code": code, "message": SECURITY_ERROR_MESSAGES[code]},
-                separators=(",", ":"),
-            )
-        )
+        super().__init__(code)
 
     @property
     def response(self) -> SecurityErrorResponse:
@@ -91,10 +84,6 @@ class SecurityFailure(ToolError):
             code=self.code,
             message=SECURITY_ERROR_MESSAGES[self.code],
         )
-
-    def as_tool_error(self) -> ToolError:
-        """Adapt this typed failure at the FastMCP boundary."""
-        return self
 
 
 class SecurityErrorResponse(BaseModel):

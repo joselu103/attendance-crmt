@@ -5,10 +5,10 @@ import json
 from dataclasses import replace
 
 import httpx
-from fastmcp.server.auth import AccessToken
 from sqlalchemy import select
 
 from attendance_crmt.audit import AuditEvent
+from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.catalog.contracts import EmployeePageQuery
 from attendance_crmt.catalog.services import (
     get_employee,
@@ -29,10 +29,10 @@ LOCATIONS_ROUTE = "/api/v1/locations"
 class StaticTokenVerifier:
     """Return one already-verified delegated user token."""
 
-    async def verify_token(self, token: str) -> AccessToken | None:
+    async def verify_token(self, token: str) -> VerifiedDelegatedAccessToken | None:
         if token != "delegated-token":
             return None
-        return AccessToken(
+        return VerifiedDelegatedAccessToken(
             token=token,
             client_id="22222222-2222-2222-2222-222222222222",
             scopes=["attendance.access"],
@@ -73,7 +73,6 @@ def _app(server_dependencies):
             server_dependencies,
             auth_provider=StaticTokenVerifier(),  # type: ignore[arg-type]
             principal_resolver=resolver,
-            requester_resolver=resolver,
         )
     )
 
@@ -220,6 +219,7 @@ def test_catalog_routes_require_authentication_and_return_safe_audited_failures(
     with audit_session_factory() as session:
         events = session.scalars(select(AuditEvent).order_by(AuditEvent.event_id)).all()
     assert [(event.tool_name, event.outcome, event.error_code) for event in events] == [
+        (f"rest:{EMPLOYEES_ROUTE}", "failure", "AUTHENTICATION_REQUIRED"),
         (f"rest:{EMPLOYEES_ROUTE}", "failure", "INVALID_ARGUMENT"),
         (f"rest:{EMPLOYEES_ROUTE}/{{employee_id}}", "failure", "NOT_FOUND"),
     ]
