@@ -9,7 +9,7 @@ from typing import Annotated, TypeVar
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -156,7 +156,7 @@ def _log_operation_failure(
 
 def current_attendance_query(
     as_of: datetime | None = None,
-    status: UserFacingLiveAttendanceStatus | None = None,
+    status: Annotated[list[UserFacingLiveAttendanceStatus] | None, Query()] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> CurrentAttendanceQuery:
@@ -165,7 +165,7 @@ def current_attendance_query(
         return CurrentAttendanceQuery(
             as_of=as_of
             or datetime.now(ZoneInfo("Europe/Ljubljana")).replace(tzinfo=None),
-            status=status,
+            statuses=tuple(status or ()),
             limit=limit,
             offset=offset,
         )

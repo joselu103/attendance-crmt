@@ -259,7 +259,7 @@ class CurrentAttendanceQuery(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     as_of: datetime
-    status: LiveAttendanceStatus | None = None
+    statuses: tuple[LiveAttendanceStatus, ...] = ()
     limit: int = 50
     offset: int = 0
 
@@ -272,6 +272,8 @@ class CurrentAttendanceQuery(BaseModel):
             raise ValueError("limit must be between 1 and 100.")
         if self.offset < 0:
             raise ValueError("offset must not be negative.")
+        if len(set(self.statuses)) != len(self.statuses):
+            raise ValueError("statuses must not contain duplicates.")
         return self
 
 
