@@ -251,6 +251,48 @@ def test_current_attendance_excludes_unknown_and_accepts_only_user_facing_filter
     assert unknown.json()["code"] == "INVALID_ARGUMENT"
 
 
+def test_current_attendance_accepts_a_repeated_status_filter_set(
+    server_dependencies, employee_factory
+) -> None:
+    _seed_reporting_data(server_dependencies, employee_factory)
+    with server_dependencies.attendance_session_factory() as session:
+        session.add_all(
+            [
+                PunchType(punch_type_id=1, punch_type_desc="Office", active=1),
+                PunchType(punch_type_id=2, punch_type_desc="Remote", active=1),
+            ]
+        )
+        session.query(AttendanceLog).filter_by(att_id=10).update(
+            {"att_punch_type_id": 1, "att_out": None}
+        )
+        session.query(AttendanceLog).filter_by(att_id=11).update(
+            {"att_punch_type_id": 2}
+        )
+        session.commit()
+
+    response = _get(
+        _app(server_dependencies),
+        "/api/v1/attendance/current?as_of=2026-08-14T12:00:00"
+        "&status=office&status=remote&limit=1",
+    )
+
+    assert response.status_code == 200
+    assert {item["status"] for item in response.json()["items"]} <= {
+        "office",
+        "remote",
+    }
+    assert response.json()["next_offset"] == 1
+
+    duplicate = _get(
+        _app(server_dependencies),
+        "/api/v1/attendance/current?as_of=2026-08-14T12:00:00"
+        "&status=office&status=office",
+    )
+
+    assert duplicate.status_code == 400
+    assert duplicate.json()["code"] == "INVALID_ARGUMENT"
+
+
 def test_organization_and_exception_reports_use_a_fixed_query_budget(
     server_dependencies, employee_factory, sqlite_engine
 ) -> None:

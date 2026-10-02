@@ -412,8 +412,10 @@ def list_current_attendance(
     ]
     if not include_unknown:
         summaries = [summary for summary in summaries if summary.status != "unknown"]
-    if query.status is not None:
-        summaries = [summary for summary in summaries if summary.status == query.status]
+    if query.statuses:
+        summaries = [
+            summary for summary in summaries if summary.status in query.statuses
+        ]
     has_next_page = len(summaries) > query.offset + query.limit
     return CurrentAttendancePage(
         items=summaries[query.offset : query.offset + query.limit],
