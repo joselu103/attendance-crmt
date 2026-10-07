@@ -9,9 +9,12 @@ from typing import Annotated, TypeVar
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Query, Request, Security
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
+from fastapi.routing import APIRoute
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -76,6 +79,13 @@ Result = TypeVar("Result")
 REST_CONTRACT_VERSION = "1.0.0"
 REST_CONTRACT_VERSION_HEADER = "X-Attendance-API-Contract-Version"
 CORRELATION_ID_HEADER = "X-Correlation-ID"
+DELEGATED_BEARER_SCHEME_NAME = "DelegatedBearer"
+delegated_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name=DELEGATED_BEARER_SCHEME_NAME,
+    bearerFormat="JWT",
+    description="Delegated Attendance Entra access token.",
+)
 logger = get_logger(__name__)
 
 _CLIENT_ERROR_CODES = frozenset(
@@ -117,13 +127,18 @@ def _is_protected_route(request: Request) -> bool:
         dependant = getattr(route, "dependant", None)
         if dependant is None:
             return False
-        pending = [dependant]
-        while pending:
-            dependency = pending.pop()
-            if getattr(dependency, "call", None) is get_principal:
-                return True
-            pending.extend(getattr(dependency, "dependencies", ()))
-        return False
+        return _depends_on(dependant, get_principal)
+    return False
+
+
+def _depends_on(dependant: object, dependency: object) -> bool:
+    """Return whether a FastAPI dependency graph contains ``dependency``."""
+    pending = [dependant]
+    while pending:
+        candidate = pending.pop()
+        if getattr(candidate, "call", None) is dependency:
+            return True
+        pending.extend(getattr(candidate, "dependencies", ()))
     return False
 
 
@@ -219,21 +234,26 @@ def my_attendance_summary_query(
         raise SecurityFailure(code="INVALID_ARGUMENT") from None
 
 
-def _bearer_token(request: Request) -> str:
-    """Read exactly one syntactically valid delegated bearer credential."""
+def _bearer_token(
+    request: Request, credentials: HTTPAuthorizationCredentials | None
+) -> str:
+    """Return one FastAPI-parsed bearer credential with strict cardinality."""
     values = request.headers.getlist("authorization")
     if not values:
         raise SecurityFailure(code="AUTHENTICATION_REQUIRED")
     if len(values) != 1:
         raise SecurityFailure(code="TOKEN_INVALID")
-
-    scheme, separator, credential = values[0].partition(" ")
-    if scheme.casefold() != "bearer" or not separator or not credential.strip():
+    if credentials is None:
         raise SecurityFailure(code="TOKEN_INVALID")
-    return credential.strip()
+    return credentials.credentials
 
 
-async def get_principal(request: Request):
+async def get_principal(
+    request: Request,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Security(delegated_bearer)
+    ],
+):
     """FastAPI dependency that verifies a bearer and derives one Principal."""
     request.state.protected_route = True
     dependencies: ServerDependencies | None = request.app.state.dependencies
@@ -245,7 +265,7 @@ async def get_principal(request: Request):
     verifier: Callable[[str], Awaitable[VerifiedDelegatedAccessToken | None]] = (
         dependencies.auth_provider.verify_token
     )
-    access_token = await verifier(_bearer_token(request))
+    access_token = await verifier(_bearer_token(request, credentials))
     principal = dependencies.principal_resolver.resolve_access_token(access_token)
     request.state.protected_operation = ProtectedOperation(
         dependencies=dependencies,
@@ -964,6 +984,42 @@ def create_app(
             ),
         )
 
+    def custom_openapi() -> dict[str, object]:
+        """Publish bearer authorization and correlation requirements to Swagger UI."""
+        if app.openapi_schema is not None:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=REST_CONTRACT_VERSION,
+            routes=app.routes,
+        )
+        components = schema.setdefault("components", {})
+        parameters = components.setdefault("parameters", {})
+        parameters["CorrelationId"] = {
+            "name": CORRELATION_ID_HEADER,
+            "in": "header",
+            "required": True,
+            "description": "A UUID that correlates this request with its audit outcome.",
+            "schema": {"type": "string", "format": "uuid"},
+        }
+        correlation_parameter = {"$ref": "#/components/parameters/CorrelationId"}
+        for route in app.routes:
+            if not isinstance(route, APIRoute) or not _depends_on(
+                route.dependant, get_principal
+            ):
+                continue
+            path = schema["paths"].get(route.path_format, {})
+            for method in route.methods or ():
+                operation = path.get(method.lower())
+                if not isinstance(operation, dict):
+                    continue
+                parameters = operation.setdefault("parameters", [])
+                if correlation_parameter not in parameters:
+                    parameters.append(correlation_parameter)
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi
     return app
 
 
