@@ -13,6 +13,11 @@ Protected routes require exactly one delegated bearer token and one UUID
 the employee and authorization result server-side and records safe,
 correlation-linked audit outcomes.
 
+Interactive API documentation is available at `/docs` and `/redoc`. In Swagger
+UI, use **Authorize** to enter a delegated Attendance bearer token, then supply
+a UUID in the required `X-Correlation-ID` header for each protected request.
+Never paste a token into source files, tickets, or other persistent records.
+
 `GET /health` returns `200 {"status":"ok"}` and is liveness only. It does not
 check SQL Server, Entra, or audit readiness.
 
