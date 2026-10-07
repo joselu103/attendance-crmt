@@ -19,7 +19,10 @@ with no request values. Protected responses publish
 The OpenAPI document publishes the delegated bearer security scheme and the
 required correlation header for every protected operation. Swagger UI users
 enter a delegated token through **Authorize** and provide a UUID correlation ID
-when trying an operation; the token is never a documented value.
+when trying an operation; the token is never a documented value. Every
+operation publishes its concrete success schema and a synthetic response
+example. Protected operations also document the safe error envelope rather
+than FastAPI's default validation response.
 
 Safe failures use `{ "code": "...", "message": "..." }`. Authentication
 failures return `401`; invalid correlation or arguments return `400`; identity
