@@ -24,15 +24,26 @@ from starlette.routing import Match
 from starlette.types import Lifespan
 
 from attendance_crmt.attendance.contracts import (
+    AttendanceEventDetail,
+    AttendanceEventPage,
     AttendanceEventQuery,
+    AttendanceEventSummary,
+    AttendanceExceptionsPage,
     AttendanceExceptionsQuery,
+    CurrentAttendancePage,
     CurrentAttendanceQuery,
+    DailyAttendance,
     DailyAttendanceQuery,
+    EmployeeAttendanceAnalysis,
     EmployeeAttendanceAnalysisQuery,
+    EmployeeAttendanceSummary,
     MyAttendanceEventQuery,
+    MyAttendanceSummary,
     MyAttendanceSummaryQuery,
+    OrganizationAttendanceAnalysis,
     OrganizationAttendanceAnalysisQuery,
     PlannedWorkQuery,
+    PlannedWorkResult,
     UserFacingLiveAttendanceStatus,
 )
 from attendance_crmt.attendance.services import (
@@ -50,7 +61,14 @@ from attendance_crmt.attendance.services import (
     list_my_attendance_events,
 )
 from attendance_crmt.authentication import VerifiedDelegatedAccessToken
-from attendance_crmt.catalog.contracts import EmployeePageQuery, EmployeeResolveQuery
+from attendance_crmt.catalog.contracts import (
+    EmployeePage,
+    EmployeePageQuery,
+    EmployeeResolveQuery,
+    EmployeeSummary,
+    LocationSummary,
+    PunchTypeSummary,
+)
 from attendance_crmt.catalog.services import (
     get_employee,
     list_active_employees,
@@ -65,6 +83,14 @@ from attendance_crmt.observability import (
     get_logger,
     log_permission_denied,
     reset_identity_context,
+)
+from attendance_crmt.openapi_responses import (
+    HealthResponse,
+    health_response_documentation,
+    protected_error_response_references,
+    protected_response_documentation,
+    safe_error_response_components,
+    security_error_schema,
 )
 from attendance_crmt.security_errors import (
     SECURITY_ERROR_MESSAGES,
@@ -98,6 +124,15 @@ _CLIENT_ERROR_CODES = frozenset(
         "IDENTITY_AMBIGUOUS",
         "FORBIDDEN",
         "NOT_FOUND",
+    }
+)
+
+_NOT_FOUND_DOCUMENTED_PATHS = frozenset(
+    {
+        "/api/v1/me/attendance-events/latest",
+        "/api/v1/employees/resolve",
+        "/api/v1/employees/{employee_id}",
+        "/api/v1/attendance-events/{attendance_event_id}",
     }
 )
 
@@ -721,12 +756,20 @@ def create_app(
             await _record_protected_failure(request, _http_failure_code(error)),
         )
 
-    @app.get("/health")
+    @app.get(
+        "/health",
+        response_model=HealthResponse,
+        responses=health_response_documentation(),
+    )
     async def health() -> dict[str, str]:
         """Report public process liveness without checking dependencies."""
         return {"status": "ok"}
 
-    @app.get("/api/v1/me/attendance-events")
+    @app.get(
+        "/api/v1/me/attendance-events",
+        response_model=AttendanceEventPage,
+        responses=protected_response_documentation("event_page"),
+    )
     async def get_my_attendance_events(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[MyAttendanceEventQuery, Depends()],
@@ -741,7 +784,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/me/attendance-events/latest")
+    @app.get(
+        "/api/v1/me/attendance-events/latest",
+        response_model=AttendanceEventSummary,
+        responses=protected_response_documentation("event"),
+    )
     async def get_my_latest_event(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
     ) -> Response:
@@ -754,7 +801,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/me/attendance-summary")
+    @app.get(
+        "/api/v1/me/attendance-summary",
+        response_model=MyAttendanceSummary,
+        responses=protected_response_documentation("my_summary"),
+    )
     async def get_my_summary(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[
@@ -771,7 +822,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/employees")
+    @app.get(
+        "/api/v1/employees",
+        response_model=EmployeePage,
+        responses=protected_response_documentation("employee_page"),
+    )
     async def get_employees(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[EmployeePageQuery, Depends()],
@@ -785,7 +840,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/employees/resolve")
+    @app.get(
+        "/api/v1/employees/resolve",
+        response_model=EmployeeSummary,
+        responses=protected_response_documentation("employee"),
+    )
     async def resolve_employee_by_identifier(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[EmployeeResolveQuery, Depends(employee_resolve_query)],
@@ -800,7 +859,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/employees/{employee_id}")
+    @app.get(
+        "/api/v1/employees/{employee_id}",
+        response_model=EmployeeSummary,
+        responses=protected_response_documentation("employee"),
+    )
     async def get_employee_by_id(
         employee_id: int,
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
@@ -814,7 +877,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/punch-types")
+    @app.get(
+        "/api/v1/punch-types",
+        response_model=list[PunchTypeSummary],
+        responses=protected_response_documentation("punch_types"),
+    )
     async def get_punch_types(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         active_only: bool = True,
@@ -828,7 +895,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/locations")
+    @app.get(
+        "/api/v1/locations",
+        response_model=list[LocationSummary],
+        responses=protected_response_documentation("locations"),
+    )
     async def get_locations(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
     ) -> Response:
@@ -840,7 +911,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/attendance-events/{attendance_event_id}")
+    @app.get(
+        "/api/v1/attendance-events/{attendance_event_id}",
+        response_model=AttendanceEventDetail,
+        responses=protected_response_documentation("event_detail"),
+    )
     async def get_attendance_event_detail(
         attendance_event_id: int,
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
@@ -855,7 +930,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/employees/{employee_id}/attendance-events")
+    @app.get(
+        "/api/v1/employees/{employee_id}/attendance-events",
+        response_model=AttendanceEventPage,
+        responses=protected_response_documentation("event_page"),
+    )
     async def get_employee_attendance_events(
         employee_id: int,
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
@@ -873,7 +952,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/employees/{employee_id}/daily-attendance")
+    @app.get(
+        "/api/v1/employees/{employee_id}/daily-attendance",
+        response_model=DailyAttendance,
+        responses=protected_response_documentation("daily_attendance"),
+    )
     async def get_employee_daily_attendance(
         employee_id: int,
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
@@ -891,7 +974,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/employees/{employee_id}/planned-work")
+    @app.get(
+        "/api/v1/employees/{employee_id}/planned-work",
+        response_model=PlannedWorkResult,
+        responses=protected_response_documentation("planned_work"),
+    )
     async def get_employee_planned_work(
         employee_id: int,
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
@@ -909,7 +996,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/attendance/current")
+    @app.get(
+        "/api/v1/attendance/current",
+        response_model=CurrentAttendancePage,
+        responses=protected_response_documentation("current_attendance"),
+    )
     async def get_current_attendance(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[CurrentAttendanceQuery, Depends(current_attendance_query)],
@@ -924,7 +1015,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/employees/{employee_id}/attendance-summary")
+    @app.get(
+        "/api/v1/employees/{employee_id}/attendance-summary",
+        response_model=EmployeeAttendanceSummary,
+        responses=protected_response_documentation("employee_summary"),
+    )
     async def get_employee_summary(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[EmployeeAttendanceAnalysisQuery, Depends()],
@@ -939,7 +1034,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/employees/{employee_id}/attendance-analysis")
+    @app.get(
+        "/api/v1/employees/{employee_id}/attendance-analysis",
+        response_model=EmployeeAttendanceAnalysis,
+        responses=protected_response_documentation("employee_analysis"),
+    )
     async def get_employee_analysis(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[EmployeeAttendanceAnalysisQuery, Depends()],
@@ -954,7 +1053,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/attendance/organization-analysis")
+    @app.get(
+        "/api/v1/attendance/organization-analysis",
+        response_model=OrganizationAttendanceAnalysis,
+        responses=protected_response_documentation("organization_analysis"),
+    )
     async def get_organization_analysis(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[OrganizationAttendanceAnalysisQuery, Depends()],
@@ -969,7 +1072,11 @@ def create_app(
             ),
         )
 
-    @app.get("/api/v1/attendance/exceptions")
+    @app.get(
+        "/api/v1/attendance/exceptions",
+        response_model=AttendanceExceptionsPage,
+        responses=protected_response_documentation("exceptions"),
+    )
     async def get_exceptions(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[AttendanceExceptionsQuery, Depends()],
@@ -995,6 +1102,10 @@ def create_app(
         )
         components = schema.setdefault("components", {})
         parameters = components.setdefault("parameters", {})
+        schemas = components.setdefault("schemas", {})
+        schemas["SecurityErrorResponse"] = security_error_schema()
+        responses = components.setdefault("responses", {})
+        responses.update(safe_error_response_components())
         parameters["CorrelationId"] = {
             "name": CORRELATION_ID_HEADER,
             "in": "header",
@@ -1016,6 +1127,13 @@ def create_app(
                 parameters = operation.setdefault("parameters", [])
                 if correlation_parameter not in parameters:
                     parameters.append(correlation_parameter)
+                responses = operation.setdefault("responses", {})
+                responses.update(
+                    protected_error_response_references(
+                        not_found=route.path_format in _NOT_FOUND_DOCUMENTED_PATHS
+                    )
+                )
+                responses.pop("422", None)
         app.openapi_schema = schema
         return schema
 

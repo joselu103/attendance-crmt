@@ -21,7 +21,8 @@
       "REST lifecycle instrumentation: every request emits one request_received and one request_completed or request_failed event with generated trace ID, validated correlation when present, route template, status/state, and duration; protected operations emit safe start, step, success, or failure events with handler identity, empty sanitized inputs, correlation, duration, and stable error code",
       "Protected REST audit completeness: every protected request, including early correlation, bearer, identity-mapping, and validation rejections, durably records exactly one safe outcome; unresolved failures use the non-sensitive unresolved actor marker, route template, empty request details, safe error code, and a generated UUID correlation when the client value is absent or invalid, while public GET /health remains operational-log-only",
       "REST v1 contract 1.0.0 documents the protected operation inventory, delegated bearer and UUID correlation requirements, safe error codes, and adapter-facing boundary",
-      "OpenAPI publishes FastAPI's DelegatedBearer HTTP bearer scheme and required UUID X-Correlation-ID parameter for every protected route; Swagger UI supports delegated-token authorization while GET /health remains public (138 local tests plus Ruff check and format check passed)"
+      "OpenAPI publishes FastAPI's DelegatedBearer HTTP bearer scheme and required UUID X-Correlation-ID parameter for every protected route; Swagger UI supports delegated-token authorization while GET /health remains public (138 local tests plus Ruff check and format check passed)",
+      "OpenAPI documents concrete success schemas, synthetic success examples, and the safe SecurityErrorResponse envelope for every REST operation; protected operations omit the unreachable default 422 schema while runtime response, authorization, audit, and REST v1 behavior remain unchanged (139 local tests plus Ruff check and format check passed)"
     ],
     "events": []
   },
