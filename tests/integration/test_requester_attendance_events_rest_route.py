@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import date, datetime
 
 import httpx
+import pytest
 
 from attendance_crmt.attendance.contracts import MyAttendanceEventQuery
 from attendance_crmt.attendance.services import list_my_attendance_events
@@ -231,3 +232,122 @@ def test_requester_events_reject_invalid_correlation_before_access(
     assert event.tool_name == f"rest:{ROUTE}"
     assert event.request_json == "{}"
     assert event.error_code == "CORRELATION_ID_INVALID"
+
+
+@pytest.mark.parametrize("end_date", ["2026-09-01", "2028-12-31"])
+def test_history_accepts_unbounded_periods(
+    server_dependencies, employee_factory, audit_session_factory, end_date
+) -> None:
+    with server_dependencies.attendance_session_factory() as session:
+        session.add(employee_factory.build(izvajalec_id=42, email="person@example.com"))
+        session.add(
+            AttendanceLog(
+                att_id=100,
+                att_user_id=42,
+                att_in=datetime(2026, 8, 1, 0, 0),  # noqa: DTZ001
+            )
+        )
+        session.commit()
+    response = _get(
+        _app(server_dependencies),
+        f"{ROUTE}?start_date=2026-08-01&end_date={end_date}",
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert [item["attendance_event_id"] for item in response.json()["items"]] == [100]
+    assert response.headers["X-Attendance-API-Contract-Version"] == "1.0.0"
+    with audit_session_factory() as session:
+        event = session.query(AuditEvent).one()
+    assert event.correlation_id == CORRELATION_ID
+    assert event.outcome == "success"
+    assert event.request_json == "{}"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "",
+        "start_date=2026-01-01",
+        "end_date=2026-01-01",
+        "start_date=invalid&end_date=2028-01-01",
+        "start_date=2028-01-01&end_date=2026-01-01",
+        "start_date=2026-01-01&end_date=2028-01-01&limit=0",
+        "start_date=2026-01-01&end_date=2028-01-01&limit=101",
+        "start_date=2026-01-01&end_date=2028-01-01&offset=-1",
+    ],
+)
+def test_history_rejects_invalid_dates_and_pagination_safely(
+    server_dependencies, employee_factory, audit_session_factory, query
+) -> None:
+    with server_dependencies.attendance_session_factory() as session:
+        session.add(employee_factory.build(izvajalec_id=42, email="person@example.com"))
+        session.commit()
+    response = _get(_app(server_dependencies), f"{ROUTE}?{query}", headers=_headers())
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_ARGUMENT"
+    with audit_session_factory() as session:
+        event = session.query(AuditEvent).one()
+    assert event.correlation_id == CORRELATION_ID
+    assert event.error_code == "INVALID_ARGUMENT"
+    assert event.request_json == "{}"
+
+
+def test_history_pages_keep_inclusive_boundaries_ties_and_isolation(
+    server_dependencies, employee_factory, audit_session_factory
+) -> None:
+    with server_dependencies.attendance_session_factory() as session:
+        session.add(employee_factory.build(izvajalec_id=42, email="person@example.com"))
+        session.add(employee_factory.build(izvajalec_id=43, email="other@example.com"))
+        for event_id, employee_id, stamp in [
+            (90, 42, datetime(2025, 12, 31, 23, 59, 59)),  # noqa: DTZ001
+            (102, 42, datetime(2026, 1, 1)),  # noqa: DTZ001
+            (101, 42, datetime(2026, 1, 1)),  # noqa: DTZ001
+            (103, 42, datetime(2028, 12, 31, 23, 59, 59, 999999)),  # noqa: DTZ001
+            (104, 42, datetime(2029, 1, 1)),  # noqa: DTZ001
+            (105, 43, datetime(2026, 1, 1)),  # noqa: DTZ001
+        ]:
+            session.add(
+                AttendanceLog(
+                    att_id=event_id,
+                    att_user_id=employee_id,
+                    att_in=stamp,
+                )
+            )
+        session.commit()
+    app = _app(server_dependencies)
+    for offset, expected_ids, next_offset in [
+        (0, [101], 1),
+        (1, [102], 2),
+        (2, [103], None),
+        (3, [], None),
+    ]:
+        response = _get(
+            app,
+            f"{ROUTE}?start_date=2026-01-01&end_date=2028-12-31&limit=1&offset={offset}&employee_id=43",
+            headers=_headers(),
+        )
+        assert response.status_code == 200
+        page = response.json()
+        assert [item["attendance_event_id"] for item in page["items"]] == expected_ids
+        assert page["next_offset"] == next_offset
+        assert page["offset"] == offset
+        assert page["limit"] == 1
+    maximum = _get(
+        app,
+        f"{ROUTE}?start_date=2026-01-01&end_date=2028-12-31&limit=100",
+        headers=_headers(),
+    )
+    assert maximum.status_code == 200
+    assert [item["attendance_event_id"] for item in maximum.json()["items"]] == [
+        101,
+        102,
+        103,
+    ]
+    assert maximum.json()["next_offset"] is None
+    with audit_session_factory() as session:
+        events = session.query(AuditEvent).all()
+    assert len(events) == 5
+    assert all(event.correlation_id == CORRELATION_ID for event in events)
+    assert all(
+        event.outcome == "success" and event.request_json == "{}" for event in events
+    )

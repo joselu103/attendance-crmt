@@ -285,6 +285,24 @@ def attendance_event_query(
         raise SecurityFailure(code="INVALID_ARGUMENT") from None
 
 
+def my_attendance_event_query(
+    start_date: date,
+    end_date: date,
+    limit: int = 50,
+    offset: int = 0,
+) -> MyAttendanceEventQuery:
+    """Build requester history criteria with safe validation errors."""
+    try:
+        return MyAttendanceEventQuery(
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            offset=offset,
+        )
+    except ValidationError:
+        raise SecurityFailure(code="INVALID_ARGUMENT") from None
+
+
 def my_attendance_summary_query(
     start_date: date, end_date: date
 ) -> MyAttendanceSummaryQuery:
@@ -798,7 +816,7 @@ def create_app(
     )
     async def get_my_attendance_events(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
-        query: Annotated[MyAttendanceEventQuery, Depends()],
+        query: Annotated[MyAttendanceEventQuery, Depends(my_attendance_event_query)],
     ) -> Response:
         """Return one bounded page for the authenticated employee only."""
         return await operation.execute(
