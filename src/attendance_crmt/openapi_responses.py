@@ -23,6 +23,7 @@ SuccessExample = Literal[
     "daily_attendance",
     "planned_work",
     "current_attendance",
+    "current_work_status",
     "employee_summary",
     "employee_analysis",
     "organization_analysis",
@@ -210,6 +211,14 @@ _SUCCESS_EXAMPLES: dict[SuccessExample, object] = {
             }
         ],
         "as_of": "2026-01-15T12:00:00+01:00",
+        "limit": 50,
+        "offset": 0,
+        "next_offset": None,
+    },
+    "current_work_status": {
+        "items": [
+            {"first_name": "Example", "last_name": "Employee", "status": "office"}
+        ],
         "limit": 50,
         "offset": 0,
         "next_offset": None,

@@ -5,13 +5,21 @@ authorization, audit, rules, and SQL Server access.
 
 ## REST v1
 
-The complete REST v1 operation inventory is in
+The complete `/api/v1` operation inventory and pilot migration rules are in
 [`docs/contracts/attendance-rest-v1.md`](docs/contracts/attendance-rest-v1.md).
 Protected routes require exactly one delegated bearer token and one UUID
 `X-Correlation-ID`. CRMT validates the approved client application,
 `attendance.access` scope, audience, tenant, and requester identity; it derives
 the employee and authorization result server-side and records safe,
 correlation-linked audit outcomes.
+
+For the pilot, mapped employees read current coworkers' names and work-status
+categories from `GET /api/v1/attendance/current-status`; CRMT chooses the
+current Europe/Ljubljana time and accepts no client date or identity selector.
+The existing detailed `GET /api/v1/attendance/current` route is now
+administrator-only. Existing non-administrator clients must migrate to the
+category-only route before pilot traffic; the pre-release contract version
+remains `1.0.0`.
 
 Interactive API documentation is available at `/docs` and `/redoc`. In Swagger
 UI, use **Authorize** to enter a delegated Attendance bearer token, then supply

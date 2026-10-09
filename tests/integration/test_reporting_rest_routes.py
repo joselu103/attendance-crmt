@@ -22,6 +22,7 @@ from attendance_crmt.attendance.services import (
     get_organization_attendance_analysis,
     list_current_attendance,
 )
+from attendance_crmt.audit import AuditEvent
 from attendance_crmt.authentication import VerifiedDelegatedAccessToken
 from attendance_crmt.identity import AuthenticatedTokenRequesterResolver, Principal
 from attendance_crmt.models import AttendanceLog, PlannedWork, PunchType
@@ -49,19 +50,24 @@ class StaticTokenVerifier:
         )
 
 
-def _get(app, path: str, *, token: str = "admin-token") -> httpx.Response:
+def _get(
+    app,
+    path: str,
+    *,
+    token: str | None = "admin-token",
+    correlation_id: str | None = CORRELATION_ID,
+) -> httpx.Response:
     async def request() -> httpx.Response:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
             base_url="http://test",
         ) as client:
-            return await client.get(
-                path,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "X-Correlation-ID": CORRELATION_ID,
-                },
-            )
+            headers = {}
+            if token is not None:
+                headers["Authorization"] = f"Bearer {token}"
+            if correlation_id is not None:
+                headers["X-Correlation-ID"] = correlation_id
+            return await client.get(path, headers=headers)
 
     return asyncio.run(request())
 
@@ -291,6 +297,156 @@ def test_current_attendance_accepts_a_repeated_status_filter_set(
 
     assert duplicate.status_code == 400
     assert duplicate.json()["code"] == "INVALID_ARGUMENT"
+
+
+def test_pilot_work_status_is_server_timed_category_only_and_audited(
+    server_dependencies, employee_factory, audit_session_factory, monkeypatch
+) -> None:
+    _seed_reporting_data(server_dependencies, employee_factory)
+    with server_dependencies.attendance_session_factory() as session:
+        session.add_all(
+            [
+                PunchType(punch_type_id=1, punch_type_desc="Office", active=1),
+                PunchType(punch_type_id=2, punch_type_desc="Remote", active=1),
+            ]
+        )
+        session.query(AttendanceLog).filter_by(att_id=10).update(
+            {"att_punch_type_id": 1}
+        )
+        session.query(AttendanceLog).filter_by(att_id=11).update(
+            {"att_punch_type_id": 2}
+        )
+        session.commit()
+
+    monkeypatch.setattr(
+        "attendance_crmt.rest._local_now",
+        lambda: datetime(2026, 8, 14, 12, 0),  # noqa: DTZ001
+    )
+    app = _app(server_dependencies)
+    path = "/api/v1/attendance/current-status"
+    page = _get(
+        app, f"{path}?status=office&status=remote&limit=1", token="employee-token"
+    )
+    second_page = _get(
+        app,
+        f"{path}?status=office&status=remote&limit=1&offset=1",
+        token="employee-token",
+    )
+    forbidden_time = _get(
+        app, f"{path}?as_of=2026-08-13T12:00:00", token="employee-token"
+    )
+
+    assert page.status_code == 200
+    assert page.headers["X-Attendance-API-Contract-Version"] == "1.0.0"
+    assert page.json()["next_offset"] == 1
+    assert second_page.status_code == 200
+    assert second_page.json()["next_offset"] is None
+    assert {
+        item["status"] for item in page.json()["items"] + second_page.json()["items"]
+    } == {"office", "remote"}
+    assert all(
+        set(item) == {"first_name", "last_name", "status"}
+        for item in page.json()["items"] + second_page.json()["items"]
+    )
+    assert set(page.json()) == {"items", "limit", "offset", "next_offset"}
+    assert forbidden_time.status_code == 400
+    assert forbidden_time.json()["code"] == "INVALID_ARGUMENT"
+    with audit_session_factory() as session:
+        audits = session.query(AuditEvent).order_by(AuditEvent.event_id).all()
+    assert [(audit.tool_name, audit.outcome, audit.error_code) for audit in audits] == [
+        (f"rest:{path}", "success", None),
+        (f"rest:{path}", "success", None),
+        (f"rest:{path}", "failure", "INVALID_ARGUMENT"),
+    ]
+    assert all(audit.correlation_id == CORRELATION_ID for audit in audits)
+    assert all(audit.request_json == "{}" for audit in audits)
+
+
+def test_pilot_work_status_uses_current_local_time_and_legacy_detail_is_admin_only(
+    server_dependencies, employee_factory, audit_session_factory, monkeypatch
+) -> None:
+    _seed_reporting_data(server_dependencies, employee_factory)
+    with server_dependencies.attendance_session_factory() as session:
+        session.add(PunchType(punch_type_id=1, punch_type_desc="Office", active=1))
+        session.query(AttendanceLog).filter_by(att_id=10).update(
+            {"att_punch_type_id": 1}
+        )
+        session.query(AttendanceLog).filter_by(att_id=11).update(
+            {"att_out": datetime(2026, 8, 14, 16, 0)}  # noqa: DTZ001
+        )
+        session.commit()
+    app = _app(server_dependencies)
+    path = "/api/v1/attendance/current-status"
+    monkeypatch.setattr(
+        "attendance_crmt.rest._local_now",
+        lambda: datetime(2026, 8, 15, 12, 0),  # noqa: DTZ001
+    )
+
+    today = _get(app, path, token="employee-token")
+    legacy_forbidden = _get(
+        app,
+        "/api/v1/attendance/current?as_of=2026-08-14T12:00:00",
+        token="employee-token",
+    )
+    legacy_admin = _get(app, "/api/v1/attendance/current?as_of=2026-08-14T12:00:00")
+
+    assert today.status_code == 200
+    assert [item["status"] for item in today.json()["items"]] == [
+        "no_status",
+        "no_status",
+    ]
+    assert legacy_forbidden.status_code == 403
+    assert legacy_forbidden.json()["code"] == "FORBIDDEN"
+    assert legacy_forbidden.headers["X-Attendance-API-Contract-Version"] == "1.0.0"
+    assert legacy_admin.status_code == 200
+    assert "attendance_event_id" in legacy_admin.json()["items"][0]
+    with audit_session_factory() as session:
+        audits = session.query(AuditEvent).order_by(AuditEvent.event_id).all()
+    assert [(audit.outcome, audit.error_code) for audit in audits] == [
+        ("success", None),
+        ("failure", "FORBIDDEN"),
+        ("success", None),
+    ]
+
+
+def test_pilot_work_status_requires_bearer_and_uuid_correlation_and_safe_filters(
+    server_dependencies, employee_factory, audit_session_factory, monkeypatch
+) -> None:
+    _seed_reporting_data(server_dependencies, employee_factory)
+    monkeypatch.setattr(
+        "attendance_crmt.rest._local_now",
+        lambda: datetime(2026, 8, 14, 12, 0),  # noqa: DTZ001
+    )
+    app = _app(server_dependencies)
+    path = "/api/v1/attendance/current-status"
+
+    no_bearer = _get(app, path, token=None)
+    bad_correlation = _get(app, path, token="employee-token", correlation_id="bad")
+    duplicate_status = _get(
+        app, f"{path}?status=office&status=office", token="employee-token"
+    )
+    unsupported_status = _get(app, f"{path}?status=unknown", token="employee-token")
+
+    assert no_bearer.status_code == 401
+    assert no_bearer.json()["code"] == "AUTHENTICATION_REQUIRED"
+    assert bad_correlation.status_code == 400
+    assert bad_correlation.json()["code"] == "CORRELATION_ID_INVALID"
+    assert duplicate_status.status_code == 400
+    assert duplicate_status.json()["code"] == "INVALID_ARGUMENT"
+    assert unsupported_status.status_code == 400
+    assert unsupported_status.json()["code"] == "INVALID_ARGUMENT"
+    with audit_session_factory() as session:
+        audits = session.query(AuditEvent).order_by(AuditEvent.event_id).all()
+    assert len(audits) == 4
+    assert [audit.error_code for audit in audits] == [
+        "AUTHENTICATION_REQUIRED",
+        "CORRELATION_ID_INVALID",
+        "INVALID_ARGUMENT",
+        "INVALID_ARGUMENT",
+    ]
+    assert all(
+        audit.outcome == "failure" and audit.request_json == "{}" for audit in audits
+    )
 
 
 def test_organization_and_exception_reports_use_a_fixed_query_budget(

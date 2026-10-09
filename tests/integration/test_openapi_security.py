@@ -10,6 +10,7 @@ from attendance_crmt.rest import (
 def test_openapi_describes_bearer_and_correlation_for_protected_routes() -> None:
     schema = create_app().openapi()
 
+    assert schema["info"]["version"] == "1.0.0"
     assert schema["components"]["securitySchemes"][DELEGATED_BEARER_SCHEME_NAME] == {
         "type": "http",
         "description": "Delegated Attendance Entra access token.",
@@ -55,6 +56,7 @@ def test_openapi_documents_concrete_response_schemas_and_safe_examples() -> None
         "/api/v1/employees/{employee_id}/daily-attendance": "DailyAttendance",
         "/api/v1/employees/{employee_id}/planned-work": "PlannedWorkResult",
         "/api/v1/attendance/current": "CurrentAttendancePage",
+        "/api/v1/attendance/current-status": "CurrentWorkStatusPage",
         "/api/v1/employees/{employee_id}/attendance-summary": "EmployeeAttendanceSummary",
         "/api/v1/employees/{employee_id}/attendance-analysis": "EmployeeAttendanceAnalysis",
         "/api/v1/attendance/organization-analysis": "OrganizationAttendanceAnalysis",

@@ -10,8 +10,8 @@
       "REST v1 protected GET /api/v1/me/attendance-summary?start_date=&end_date= -> requester-scoped aggregate for an inclusive maximum 366-calendar-day period; completed positive intervals are clipped to the period and return total recorded hours, attendance-day count, and monthly/location breakdowns with delegated bearer, UUID correlation, and correlation-linked safe audit outcome",
       "Production ASGI composition serves only the protected REST application; direct POST /mcp returns 404 and no session-admission route exists",
       "REST v1 protected catalog reads: GET /api/v1/employees?limit=50&offset=0, GET /api/v1/employees/{employee_id}, GET /api/v1/punch-types?active_only=true, and GET /api/v1/locations -> established immutable catalog responses; delegated bearer and UUID correlation required; correlation-linked safe audit outcome",
-      "REST v1 protected reporting reads: GET /api/v1/attendance/current, GET /api/v1/employees/{employee_id}/attendance-summary, GET /api/v1/employees/{employee_id}/attendance-analysis, GET /api/v1/attendance/organization-analysis, and GET /api/v1/attendance/exceptions; delegated bearer and UUID correlation required; existing authorization, bounded date-range/pagination, result serialization, safe errors, and correlation-linked audits preserved",
-      "REST v1 workforce status: GET /api/v1/attendance/current remains available to delegated authenticated employees; omitted as_of uses server Europe/Ljubljana local time, accepts zero or more repeated status values from office, remote, customer_site, break, absence, or no_status, selects their union before pagination, omits unknown states, and preserves correlation-linked safe audits",
+      "REST v1 protected reporting reads: GET /api/v1/attendance/current, GET /api/v1/employees/{employee_id}/attendance-summary, GET /api/v1/employees/{employee_id}/attendance-analysis, GET /api/v1/attendance/organization-analysis, and GET /api/v1/attendance/exceptions; delegated bearer and UUID correlation required; detailed current attendance is administrator-only for the pilot, while remaining report authorization, bounds, serialization, safe errors, and correlation-linked audits are preserved",
+      "REST v1 pilot workforce status: GET /api/v1/attendance/current-status is available to mapped delegated employees, samples current Europe/Ljubljana server time without client as_of or identity selectors, accepts repeated recognized status filters, and returns only first_name, last_name, status plus pagination with correlation-linked safe audits; legacy GET /api/v1/attendance/current retains its detailed response and arbitrary as_of for administrators only",
       "Organization analysis and attendance exception reports use a fixed three-query data-loading budget, verified locally against multiple employees, rather than an employee-scaled N+1 query pattern",
       "REST v1 protected admin reads: GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=50&offset=0, GET /api/v1/attendance-events/{attendance_event_id}, GET /api/v1/employees/{employee_id}/daily-attendance?day=, and GET /api/v1/employees/{employee_id}/planned-work?start_date=&end_date=; existing authorization, bounds, response semantics, UUID correlation, and safe audit outcomes preserved",
       "REST v1 privileged employee resolver: GET /api/v1/employees/resolve?employee_id=&username=&email= is registered before the employee-id route; administrators must supply exactly one exact identifier and receive a directory-safe EmployeeSummary or safe INVALID_ARGUMENT, NOT_FOUND, or FORBIDDEN with correlation-linked auditing",
@@ -22,11 +22,17 @@
       "Protected REST audit completeness: every protected request, including early correlation, bearer, identity-mapping, and validation rejections, durably records exactly one safe outcome; unresolved failures use the non-sensitive unresolved actor marker, route template, empty request details, safe error code, and a generated UUID correlation when the client value is absent or invalid, while public GET /health remains operational-log-only",
       "REST v1 contract 1.0.0 documents the protected operation inventory, delegated bearer and UUID correlation requirements, safe error codes, and adapter-facing boundary",
       "OpenAPI publishes FastAPI's DelegatedBearer HTTP bearer scheme and required UUID X-Correlation-ID parameter for every protected route; Swagger UI supports delegated-token authorization while GET /health remains public (138 local tests plus Ruff check and format check passed)",
-      "OpenAPI documents concrete success schemas, synthetic success examples, and the safe SecurityErrorResponse envelope for every REST operation; protected operations omit the unreachable default 422 schema while runtime response, authorization, audit, and REST v1 behavior remain unchanged (139 local tests plus Ruff check and format check passed)"
+      "OpenAPI documents concrete success schemas, synthetic success examples, and the safe SecurityErrorResponse envelope for every REST operation; protected operations omit the unreachable default 422 schema while runtime response, authorization, audit, and REST v1 behavior remain unchanged (139 local tests plus Ruff check and format check passed)",
+      "Pilot visibility source slice preserves REST contract version 1.0.0 and the /api/v1 namespace; existing non-administrator clients of detailed GET /api/v1/attendance/current now receive safe FORBIDDEN and must migrate to GET /api/v1/attendance/current-status; administrator detail behavior and requester/admin history isolation remain unchanged"
     ],
-    "events": []
+    "events": [
+      "2026-10-08 pilot source verification: focused reporting/OpenAPI tests 11 passed; full pytest 142 passed; Ruff check, Ruff format check, and git diff --check passed under Python 3.14.2 using uv run --no-sync with the clean-environment commands"
+    ]
   },
   "dependencies_needed": {
+    "downstream": [
+      "Attendance MCP 1.3.0 get_current_attendance maps to the now administrator-only detailed REST route; MCP must add a get_current_work_status mapping to GET /api/v1/attendance/current-status, publish its successor contract/version and compatibility rule, and Teams must migrate before employee pilot traffic"
+    ],
     "entra": [
       "Attendance CRMT API app registration exposing attendance.access",
       "Approved Teams bot delegated permission, OBO consent, and production certificate configuration"
@@ -41,6 +47,8 @@
     ]
   },
   "open_issues_or_blockers": [
+    "Pilot REST source is locally verified only; MCP and Teams must consume the new category-only endpoint before employee pilot traffic.",
+    "Pilot SQLite audit retention, access, backup and recovery, and required event/field policy remain owner decisions before real attendance data is used.",
     "No verified non-production HTTPS REST deployment exists.",
     "No verified Attendance CRMT Entra API registration exposing attendance.access exists.",
     "No verified CI-published immutable registry digest exists for the reviewed source revision.",

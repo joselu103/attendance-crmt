@@ -23,6 +23,8 @@ from attendance_crmt.attendance.contracts import (
     CurrentAttendancePage,
     CurrentAttendanceQuery,
     CurrentAttendanceSummary,
+    CurrentWorkStatus,
+    CurrentWorkStatusPage,
     DailyAttendance,
     DailyAttendanceQuery,
     EmployeeAttendanceAnalysis,
@@ -423,6 +425,42 @@ def list_current_attendance(
         limit=query.limit,
         offset=query.offset,
         next_offset=query.offset + query.limit if has_next_page else None,
+    )
+
+
+def list_administrator_current_attendance(
+    *,
+    requester: Requester,
+    session_factory: sessionmaker[Session],
+    query: CurrentAttendanceQuery,
+) -> CurrentAttendancePage:
+    """Keep the historical detailed workforce view administrator-only."""
+    if "admin" not in requester.roles:
+        raise SecurityFailure(code="FORBIDDEN")
+    return list_current_attendance(
+        session_factory=session_factory, query=query, include_unknown=False
+    )
+
+
+def list_current_work_status(
+    *, session_factory: sessionmaker[Session], query: CurrentAttendanceQuery
+) -> CurrentWorkStatusPage:
+    """Project current workforce states to names and status categories only."""
+    page = list_current_attendance(
+        session_factory=session_factory, query=query, include_unknown=False
+    )
+    return CurrentWorkStatusPage(
+        items=[
+            CurrentWorkStatus(
+                first_name=item.first_name,
+                last_name=item.last_name,
+                status=item.status,
+            )
+            for item in page.items
+        ],
+        limit=page.limit,
+        offset=page.offset,
+        next_offset=page.next_offset,
     )
 
 
