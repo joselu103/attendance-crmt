@@ -314,6 +314,27 @@ class CurrentAttendancePage(BaseModel):
         return _serialize_local_datetime(value)
 
 
+class CurrentWorkStatus(BaseModel):
+    """Directory name and current status category without event details."""
+
+    model_config = ConfigDict(frozen=True)
+
+    first_name: str
+    last_name: str
+    status: UserFacingLiveAttendanceStatus
+
+
+class CurrentWorkStatusPage(BaseModel):
+    """One page of same-day workforce status categories."""
+
+    model_config = ConfigDict(frozen=True)
+
+    items: list[CurrentWorkStatus]
+    limit: int
+    offset: int
+    next_offset: int | None
+
+
 class EmployeeAttendanceAnalysisQuery(BaseModel):
     """Validated employee reporting range, limited to 31 calendar days."""
 

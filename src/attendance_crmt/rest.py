@@ -32,6 +32,7 @@ from attendance_crmt.attendance.contracts import (
     AttendanceExceptionsQuery,
     CurrentAttendancePage,
     CurrentAttendanceQuery,
+    CurrentWorkStatusPage,
     DailyAttendance,
     DailyAttendanceQuery,
     EmployeeAttendanceAnalysis,
@@ -56,8 +57,9 @@ from attendance_crmt.attendance.services import (
     get_my_latest_attendance_event,
     get_organization_attendance_analysis,
     get_planned_work,
+    list_administrator_current_attendance,
     list_attendance_events,
-    list_current_attendance,
+    list_current_work_status,
     list_my_attendance_events,
 )
 from attendance_crmt.authentication import VerifiedDelegatedAccessToken
@@ -204,6 +206,11 @@ def _log_operation_failure(
     )
 
 
+def _local_now() -> datetime:
+    """Sample server time in the attendance database's local calendar."""
+    return datetime.now(ZoneInfo("Europe/Ljubljana")).replace(tzinfo=None)
+
+
 def current_attendance_query(
     as_of: datetime | None = None,
     status: Annotated[list[UserFacingLiveAttendanceStatus] | None, Query()] = None,
@@ -213,8 +220,27 @@ def current_attendance_query(
     """Build the current-attendance query with the established local default."""
     try:
         return CurrentAttendanceQuery(
-            as_of=as_of
-            or datetime.now(ZoneInfo("Europe/Ljubljana")).replace(tzinfo=None),
+            as_of=as_of or _local_now(),
+            statuses=tuple(status or ()),
+            limit=limit,
+            offset=offset,
+        )
+    except ValidationError:
+        raise SecurityFailure(code="INVALID_ARGUMENT") from None
+
+
+def current_work_status_query(
+    request: Request,
+    status: Annotated[list[UserFacingLiveAttendanceStatus] | None, Query()] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> CurrentAttendanceQuery:
+    """Build a server-timed status query without a client date or identity selector."""
+    if set(request.query_params) - {"status", "limit", "offset"}:
+        raise SecurityFailure(code="INVALID_ARGUMENT")
+    try:
+        return CurrentAttendanceQuery(
+            as_of=_local_now(),
             statuses=tuple(status or ()),
             limit=limit,
             offset=offset,
@@ -997,6 +1023,24 @@ def create_app(
         )
 
     @app.get(
+        "/api/v1/attendance/current-status",
+        response_model=CurrentWorkStatusPage,
+        responses=protected_response_documentation("current_work_status"),
+    )
+    async def get_current_work_status(
+        operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
+        query: Annotated[CurrentAttendanceQuery, Depends(current_work_status_query)],
+    ) -> Response:
+        """Return today's current workforce status categories without event details."""
+        return await operation.execute(
+            name="rest:/api/v1/attendance/current-status",
+            action=lambda: list_current_work_status(
+                session_factory=operation.dependencies.attendance_session_factory,
+                query=query,
+            ),
+        )
+
+    @app.get(
         "/api/v1/attendance/current",
         response_model=CurrentAttendancePage,
         responses=protected_response_documentation("current_attendance"),
@@ -1005,13 +1049,13 @@ def create_app(
         operation: Annotated[ProtectedOperation, Depends(get_protected_operation)],
         query: Annotated[CurrentAttendanceQuery, Depends(current_attendance_query)],
     ) -> Response:
-        """Return the current active-workforce attendance view."""
+        """Return the administrator-only detailed workforce view."""
         return await operation.execute(
             name="rest:/api/v1/attendance/current",
-            action=lambda: list_current_attendance(
+            action=lambda: list_administrator_current_attendance(
+                requester=operation.principal,
                 session_factory=operation.dependencies.attendance_session_factory,
                 query=query,
-                include_unknown=False,
             ),
         )
 
