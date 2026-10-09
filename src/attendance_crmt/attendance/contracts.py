@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 _EUROPE_LJUBLJANA = ZoneInfo("Europe/Ljubljana")
-_MAX_REQUESTER_ATTENDANCE_RANGE_DAYS = 31
 _MAX_REQUESTER_SUMMARY_RANGE_DAYS = 366
 
 
@@ -32,17 +31,13 @@ class AttendanceEventQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_date_range(self) -> AttendanceEventQuery:
-        """Apply shared range, pagination, and 31-calendar-day rules."""
+        """Apply date-order and pagination rules."""
         if not 1 <= self.limit <= 100:
             raise ValueError("limit must be between 1 and 100.")
         if self.offset < 0:
             raise ValueError("offset must not be negative.")
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date.")
-        if (
-            self.end_date - self.start_date
-        ).days >= _MAX_REQUESTER_ATTENDANCE_RANGE_DAYS:
-            raise ValueError("attendance date range must not exceed 31 calendar days.")
         return self
 
 
@@ -58,19 +53,13 @@ class MyAttendanceEventQuery(BaseModel):
 
     @model_validator(mode="after")
     def validate_date_range(self) -> MyAttendanceEventQuery:
-        """Reject invalid pagination, date ordering, and ranges over 31 days."""
+        """Reject invalid pagination and date ordering."""
         if not 1 <= self.limit <= 100:
             raise ValueError("limit must be between 1 and 100.")
         if self.offset < 0:
             raise ValueError("offset must not be negative.")
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date.")
-        if (self.end_date - self.start_date).days >= (
-            _MAX_REQUESTER_ATTENDANCE_RANGE_DAYS
-        ):
-            raise ValueError(
-                "requester attendance date range must not exceed 31 calendar days."
-            )
         return self
 
 

@@ -6,7 +6,12 @@ from pydantic import ValidationError
 from attendance_crmt.attendance.contracts import (
     AttendanceEventPage,
     AttendanceEventSummary,
+    AttendanceExceptionsQuery,
+    EmployeeAttendanceAnalysisQuery,
     MyAttendanceEventQuery,
+    MyAttendanceSummaryQuery,
+    OrganizationAttendanceAnalysisQuery,
+    PlannedWorkQuery,
 )
 
 
@@ -30,14 +35,6 @@ def test_my_attendance_query_accepts_31_inclusive_calendar_days() -> None:
 
     assert query.start_date == date(2026, 8, 1)
     assert query.end_date == date(2026, 8, 31)
-
-
-def test_my_attendance_query_rejects_more_than_31_calendar_days() -> None:
-    with pytest.raises(ValidationError, match="must not exceed 31 calendar days"):
-        MyAttendanceEventQuery(
-            start_date=date(2026, 8, 1),
-            end_date=date(2026, 9, 1),
-        )
 
 
 def test_my_attendance_query_rejects_invalid_pagination_and_date_order() -> None:
@@ -82,3 +79,18 @@ def test_attendance_event_timestamps_include_ljubljana_offset() -> None:
 
     assert payload["checked_in_at"] == "2026-08-10T08:00:00+02:00"
     assert payload["checked_out_at"] == "2026-08-10T16:00:00+02:00"
+
+
+@pytest.mark.parametrize(
+    "query_type,extra",
+    [
+        (MyAttendanceSummaryQuery, {}),
+        (PlannedWorkQuery, {"employee_id": 42}),
+        (EmployeeAttendanceAnalysisQuery, {"employee_id": 42}),
+        (OrganizationAttendanceAnalysisQuery, {}),
+        (AttendanceExceptionsQuery, {}),
+    ],
+)
+def test_non_history_contracts_keep_date_caps(query_type, extra) -> None:
+    with pytest.raises(ValidationError, match="must not exceed"):
+        query_type(start_date=date(2026, 1, 1), end_date=date(2028, 12, 31), **extra)

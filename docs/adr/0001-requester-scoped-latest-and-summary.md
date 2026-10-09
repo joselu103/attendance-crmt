@@ -6,8 +6,10 @@ Accepted.
 
 ## Context
 
-Personal attendance chat needs a concise latest-entry answer and a longer
-personal reporting period than the 31-calendar-day event-history operation.
+Personal attendance chat needs a concise latest-entry answer and an aggregate
+personal reporting period. When this ADR was accepted, event history was capped
+at 31 calendar days; ATTENDANCE-HISTORY-PAGINATION-001 removes that history cap.
+The summary retains its independent 366-calendar-day cap.
 The service must preserve CRMT as the only authority for identity derivation,
 authorization, audit, attendance rules, and database access.
 

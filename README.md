@@ -21,6 +21,14 @@ administrator-only. Existing non-administrator clients must migrate to the
 category-only route before pilot traffic; the pre-release contract version
 remains `1.0.0`.
 
+Personal and administrator attendance-event listings require explicit start and end
+dates with no maximum span; future end dates are allowed. Both dates are
+inclusive Europe/Ljubljana calendar dates. Pagination remains default 50,
+limit 1–100, nonnegative offset, and `next_offset` for continuation. Pages read
+live data in timestamp/event-ID order, without a snapshot guarantee. Summary,
+report, and planned-work date limits remain unchanged. This additive acceptance
+change preserves REST `1.0.0`, routes, and response fields.
+
 Interactive API documentation is available at `/docs` and `/redoc`. In Swagger
 UI, use **Authorize** to enter a delegated Attendance bearer token, then supply
 a UUID in the required `X-Correlation-ID` header for each protected request.

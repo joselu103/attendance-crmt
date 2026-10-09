@@ -45,8 +45,8 @@ Europe/Ljubljana offset. Page `limit` defaults to 50, is 1 through 100, and
 | `resolve_employee` | `GET /api/v1/employees/resolve?employee_id=&username=&email=` | Administrator only; exactly one identifier is required and matches exactly; returns one directory-safe employee. |
 | `list_punch_types` | `GET /api/v1/punch-types?active_only=true` | Delegated requester; configured reference data. |
 | `list_locations` | `GET /api/v1/locations` | Delegated requester; location reference data. |
-| `list_attendance_events` | `GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=&offset=` | Administrator only; inclusive range is at most 31 calendar days and pagination is bounded. |
-| `list_my_attendance_events` | `GET /api/v1/me/attendance-events?start_date=&end_date=&limit=&offset=` | Server-derived employee only; inclusive range is at most 31 calendar days. |
+| `list_attendance_events` | `GET /api/v1/employees/{employee_id}/attendance-events?start_date=&end_date=&limit=&offset=` | Administrator only; explicit inclusive dates have no maximum span; pagination is bounded. |
+| `list_my_attendance_events` | `GET /api/v1/me/attendance-events?start_date=&end_date=&limit=&offset=` | Server-derived employee only; explicit inclusive dates have no maximum span. |
 | — | `GET /api/v1/me/attendance-events/latest` | Server-derived employee only; returns the most recent recorded event or safe `NOT_FOUND`. |
 | — | `GET /api/v1/me/attendance-summary?start_date=&end_date=` | Server-derived employee only; inclusive range is at most 366 calendar days; returns aggregate recorded time and monthly/location breakdowns. |
 | `get_attendance_event` | `GET /api/v1/attendance-events/{attendance_event_id}` | Administrator only; includes recorded audit metadata. |
@@ -103,3 +103,23 @@ Attendance CRMT exposes REST only. It has no `/mcp` compatibility endpoint and
 no session-admission endpoint. An external adapter may map its public contract
 to this inventory, but every protected REST request is independently validated
 by CRMT and must forward the delegated bearer and correlation ID unchanged.
+
+## Attendance history pagination
+
+Both event-list routes require explicit `start_date` and `end_date`, inclusive
+Europe/Ljubljana calendar dates, with no maximum date span. Future end dates
+are permitted and return existing matching events only; reversed, missing, or
+invalid dates return safe `INVALID_ARGUMENT`. Default `limit` is 50, accepted
+limits are 1–100, and `offset` must be nonnegative. The database applies the
+inclusive filter and timestamp/event-ID ascending order before offset and limit
+plus one-row lookahead. `next_offset` identifies the next page when more rows
+exist; final and empty pages return null. Pages read live data, so concurrent
+changes can move rows between pages; no snapshot is promised.
+
+Requester history remains server-derived and isolated; employee history remains
+administrator-only. Delegated bearer, UUID correlation, and durable safe audit
+outcomes apply on every page. Accepting wider periods is additive under REST
+`1.0.0`; routes, arguments, and response fields are unchanged. Summary, analysis,
+exception, and planned-work caps are unchanged. MCP may forward complete periods
+without splitting them after consuming this locally verified source contract;
+this does not establish deployment or end-to-end readiness.

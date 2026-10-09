@@ -5,7 +5,7 @@
     "interfaces_or_endpoints": [
       "Public liveness contract: GET /health -> 200 {\"status\":\"ok\"}; liveness only, not database, Entra, or audit readiness",
       "REST shell: attendance_crmt.rest.create_app(dependencies=None) -> FastAPI exposes only public GET /health -> 200 {\"status\":\"ok\"} without accessing injected dependencies",
-      "REST v1 protected GET /api/v1/me/attendance-events?start_date=&end_date=&limit=50&offset=0 -> requester-scoped AttendanceEventPage; server-derived employee; delegated bearer and UUID correlation required; inclusive max 31 days; correlation-linked safe audit outcome",
+      "REST v1 protected GET /api/v1/me/attendance-events?start_date=&end_date=&limit=50&offset=0 -> requester-scoped AttendanceEventPage; server-derived employee; delegated bearer and UUID correlation required; inclusive explicit dates without maximum span; future end dates permitted; correlation-linked safe audit outcome",
       "REST v1 protected GET /api/v1/me/attendance-events/latest -> requester-scoped most recent AttendanceEventSummary or safe NOT_FOUND; server-derived employee, delegated bearer, UUID correlation, and correlation-linked safe audit outcome",
       "REST v1 protected GET /api/v1/me/attendance-summary?start_date=&end_date= -> requester-scoped aggregate for an inclusive maximum 366-calendar-day period; completed positive intervals are clipped to the period and return total recorded hours, attendance-day count, and monthly/location breakdowns with delegated bearer, UUID correlation, and correlation-linked safe audit outcome",
       "Production ASGI composition serves only the protected REST application; direct POST /mcp returns 404 and no session-admission route exists",
@@ -23,15 +23,19 @@
       "REST v1 contract 1.0.0 documents the protected operation inventory, delegated bearer and UUID correlation requirements, safe error codes, and adapter-facing boundary",
       "OpenAPI publishes FastAPI's DelegatedBearer HTTP bearer scheme and required UUID X-Correlation-ID parameter for every protected route; Swagger UI supports delegated-token authorization while GET /health remains public (138 local tests plus Ruff check and format check passed)",
       "OpenAPI documents concrete success schemas, synthetic success examples, and the safe SecurityErrorResponse envelope for every REST operation; protected operations omit the unreachable default 422 schema while runtime response, authorization, audit, and REST v1 behavior remain unchanged (139 local tests plus Ruff check and format check passed)",
-      "Pilot visibility source slice preserves REST contract version 1.0.0 and the /api/v1 namespace; existing non-administrator clients of detailed GET /api/v1/attendance/current now receive safe FORBIDDEN and must migrate to GET /api/v1/attendance/current-status; administrator detail behavior and requester/admin history isolation remain unchanged"
+      "Pilot visibility source slice preserves REST contract version 1.0.0 and the /api/v1 namespace; existing non-administrator clients of detailed GET /api/v1/attendance/current now receive safe FORBIDDEN and must migrate to GET /api/v1/attendance/current-status; administrator detail behavior and requester/admin history isolation remain unchanged",
+      "ATTENDANCE-HISTORY-PAGINATION-001: both personal and administrator event-list routes accept explicit inclusive periods without a maximum span, including future ends; REST 1.0.0 routes, fields, default 50/limit 1\u2013100/nonnegative offset/next_offset, SQL ordering/lookahead, requester isolation, admin authorization, and durable correlation-linked audits preserved. MCP source may now implement complete-period forwarding against this verified worktree; deployed integration is unverified."
     ],
     "events": [
-      "2026-10-08 pilot source verification: focused reporting/OpenAPI tests 11 passed; full pytest 142 passed; Ruff check, Ruff format check, and git diff --check passed under Python 3.14.2 using uv run --no-sync with the clean-environment commands"
+      "2026-10-08 pilot source verification: focused reporting/OpenAPI tests 11 passed; full pytest 142 passed; Ruff check, Ruff format check, and git diff --check passed under Python 3.14.2 using uv run --no-sync with the clean-environment commands",
+      "2026-10-09 history source verification: uv sync --locked --all-groups created Python 3.14.2 environment; public-seam RED 4 wider-period cases failed as expected, then passed; additional requester invalid-bound RED 4 cases exposed existing 500 handling and passed after safe dependency validation; focused history/contracts/latest-summary 42 passed; full clean-environment pytest 168 passed; Ruff check and format check passed.",
+      "2026-10-09 coordinator downstream reconciliation: MCP full suite57 and Teams full suite247 passed; all local history source slices complete. REST source verification168 remains valid; JSON/diff checks passed for this metadata-only reconciliation."
     ]
   },
   "dependencies_needed": {
     "downstream": [
-      "Attendance MCP 1.3.0 get_current_attendance maps to the now administrator-only detailed REST route; MCP must add a get_current_work_status mapping to GET /api/v1/attendance/current-status, publish its successor contract/version and compatibility rule, and Teams must migrate before employee pilot traffic"
+      "Pilot workforce REST/MCP/Teams source integration is already merged; deployed category-only access and real-account authorization remain unverified.",
+      "History pagination source integration is complete in separate uncommitted owner worktrees: REST168/MCP57/Teams247 passing tests with compatible REST1.0.0 and pre-release MCP1.3.0. No downstream history implementation remains; deployed integration and real-account evidence remain external."
     ],
     "entra": [
       "Attendance CRMT API app registration exposing attendance.access",
@@ -47,12 +51,13 @@
     ]
   },
   "open_issues_or_blockers": [
-    "Pilot REST source is locally verified only; MCP and Teams must consume the new category-only endpoint before employee pilot traffic.",
+    "Pilot REST/MCP/Teams source is locally verified and merged; deployed integration and real-account evidence remain external.",
     "Pilot SQLite audit retention, access, backup and recovery, and required event/field policy remain owner decisions before real attendance data is used.",
     "No verified non-production HTTPS REST deployment exists.",
     "No verified Attendance CRMT Entra API registration exposing attendance.access exists.",
     "No verified CI-published immutable registry digest exists for the reviewed source revision.",
     "Production active-email uniqueness readiness check has not run against the authoritative SQL Server database.",
-    "Real client traffic remains disabled until Entra, approved client delegation, certificate, deployed HTTPS REST, runtime secret/database/audit prerequisites, production data-quality, and end-to-end requester/audit verification pass."
+    "Real client traffic remains disabled until Entra, approved client delegation, certificate, deployed HTTPS REST, runtime secret/database/audit prerequisites, production data-quality, and end-to-end requester/audit verification pass.",
+    "Out-of-scope existing report/planned-work model-validator errors return 500 INTERNAL_ERROR at several REST routes; their date caps remain enforced and unchanged. Observed via synthetic long-range probes; no unrelated route changes made."
   ]
 }

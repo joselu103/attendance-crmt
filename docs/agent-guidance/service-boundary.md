@@ -10,8 +10,11 @@ do not infer models or relationships. Employee identity is server-derived, so
 requester-scoped calls must not accept an employee ID, email, role, or another
 identity selector from clients.
 
-Use Europe/Ljubljana naive time and enforce the inclusive 31-calendar-day limit
-for attendance-event queries. Audit protected REST operations with a
+Use Europe/Ljubljana naive time and inclusive explicit start/end dates for
+attendance-event queries, with no maximum date span and future ends permitted.
+Preserve date ordering, default 50/limit 1–100/nonnegative offset pagination,
+timestamp/event-ID ordering, and database lookahead. Summary, reporting, and
+planned-work date caps remain unchanged. Audit protected REST operations with a
 server-derived requester and correlation ID, without logging sensitive values
 or attendance records.
 
