@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
@@ -12,12 +13,14 @@ from attendance_crmt.attendance.contracts import (
     AttendanceAnalysisDay,
     AttendanceEventDetail,
     AttendanceEventPage,
+    AttendanceEventPageSummary,
     AttendanceEventQuery,
     AttendanceEventSummary,
     AttendanceException,
     AttendanceExceptionKind,
     AttendanceExceptionsPage,
     AttendanceExceptionsQuery,
+    AttendanceHistoryEvent,
     AttendanceLocationSummary,
     AttendanceMonthlySummary,
     CurrentAttendancePage,
@@ -54,6 +57,7 @@ _PUNCH_TYPE_STATUS: dict[int, LiveAttendanceStatus] = {
     5: "break",
     **{punch_type_id: "absence" for punch_type_id in range(6, 16)},
 }
+_EUROPE_LJUBLJANA = ZoneInfo("Europe/Ljubljana")
 
 
 def list_attendance_events(
@@ -199,34 +203,133 @@ def _list_attendance_events_for_employee(
     query: AttendanceEventQuery,
 ) -> AttendanceEventPage:
     start_at = datetime.combine(query.start_date, time.min)
-    end_at = datetime.combine(query.end_date, time.max)
+    end_exclusive = _history_end_exclusive(query.end_date)
     with session_factory() as session:
-        events = list(
-            session.scalars(
-                select(AttendanceLog)
-                .options(
-                    selectinload(AttendanceLog.location),
-                    selectinload(AttendanceLog.punch_type),
-                )
-                .where(
-                    AttendanceLog.att_user_id == query.employee_id,
+        page_statement = (
+            select(AttendanceLog)
+            .options(
+                selectinload(AttendanceLog.location),
+                selectinload(AttendanceLog.punch_type),
+            )
+            .where(
+                AttendanceLog.att_user_id == query.employee_id,
+                AttendanceLog.att_in.is_not(None),
+                or_(
                     AttendanceLog.att_in >= start_at,
-                    AttendanceLog.att_in <= end_at,
-                )
-                .order_by(AttendanceLog.att_in, AttendanceLog.att_id)
-                .offset(query.offset)
-                .limit(query.limit + 1)
-            ).all()
+                    AttendanceLog.att_out.is_(None),
+                    AttendanceLog.att_out > start_at,
+                ),
+            )
+            .order_by(AttendanceLog.att_in, AttendanceLog.att_id)
+            .offset(query.offset)
+            .limit(query.limit + 1)
+        )
+        if end_exclusive is not None:
+            page_statement = page_statement.where(AttendanceLog.att_in < end_exclusive)
+        events = list(session.scalars(page_statement).all())
+
+        page_events = events[: query.limit]
+        items = tuple(_attendance_history_event(event) for event in page_events)
+        duration_cache = {
+            (event.att_id, event.att_in, event.att_out): item.duration_minutes
+            for event, item in zip(page_events, items, strict=True)
+        }
+        period_duration_minutes = _period_duration_minutes(
+            session=session,
+            employee_id=query.employee_id,
+            start_at=start_at,
+            end_exclusive=end_exclusive,
+            duration_cache=duration_cache,
         )
     has_next_page = len(events) > query.limit
     return AttendanceEventPage(
-        items=tuple(
-            _attendance_event_summary(event) for event in events[: query.limit]
-        ),
+        items=items,
         limit=query.limit,
         offset=query.offset,
         next_offset=query.offset + query.limit if has_next_page else None,
+        summary=AttendanceEventPageSummary(
+            page_duration_minutes=sum(
+                item.duration_minutes
+                for item in items
+                if item.duration_minutes is not None
+            ),
+            period_duration_minutes=period_duration_minutes,
+        ),
     )
+
+
+def _history_end_exclusive(end_date: date) -> datetime | None:
+    """Return the following local midnight, or open-ended for ``date.max``."""
+    if end_date == date.max:
+        return None
+    return datetime.combine(end_date + timedelta(days=1), time.min)
+
+
+def _period_duration_minutes(
+    *,
+    session: Session,
+    employee_id: int,
+    start_at: datetime,
+    end_exclusive: datetime | None,
+    duration_cache: dict[tuple[int, datetime | None, datetime | None], int | None],
+) -> int:
+    """Stream valid completed overlaps and sum independently clipped minutes."""
+    statement = select(
+        AttendanceLog.att_id, AttendanceLog.att_in, AttendanceLog.att_out
+    ).where(
+        AttendanceLog.att_user_id == employee_id,
+        AttendanceLog.att_in.is_not(None),
+        AttendanceLog.att_out.is_not(None),
+        AttendanceLog.att_out > start_at,
+    )
+    if end_exclusive is not None:
+        statement = statement.where(AttendanceLog.att_in < end_exclusive)
+
+    total = 0
+    for attendance_event_id, checked_in_at, checked_out_at in session.execute(
+        statement
+    ).yield_per(500):
+        if checked_in_at >= start_at and (
+            end_exclusive is None or checked_out_at <= end_exclusive
+        ):
+            cache_key = (attendance_event_id, checked_in_at, checked_out_at)
+            if cache_key in duration_cache:
+                cached_duration = duration_cache[cache_key]
+                if cached_duration is not None:
+                    total += cached_duration
+                continue
+        duration = _elapsed_minutes(checked_in_at, checked_out_at)
+        if duration is None:
+            continue
+        if checked_in_at >= start_at and (
+            end_exclusive is None or checked_out_at <= end_exclusive
+        ):
+            total += duration
+            continue
+        clipped_start = max(checked_in_at, start_at)
+        clipped_end = (
+            checked_out_at
+            if end_exclusive is None
+            else min(checked_out_at, end_exclusive)
+        )
+        total += _elapsed_minutes(clipped_start, clipped_end) or 0
+    return total
+
+
+def _elapsed_minutes(
+    checked_in_at: datetime | None, checked_out_at: datetime | None
+) -> int | None:
+    """Measure elapsed minutes using the serializer's local-time interpretation."""
+    if checked_in_at is None or checked_out_at is None:
+        return None
+    if checked_out_at < checked_in_at:
+        return None
+    started_at = checked_in_at.replace(tzinfo=_EUROPE_LJUBLJANA).astimezone(UTC)
+    ended_at = checked_out_at.replace(tzinfo=_EUROPE_LJUBLJANA).astimezone(UTC)
+    elapsed = ended_at - started_at
+    if elapsed < timedelta(0):
+        return None
+    return int(elapsed // timedelta(minutes=1))
 
 
 def get_attendance_event(
@@ -323,6 +426,14 @@ def _attendance_event_summary(event: AttendanceLog) -> AttendanceEventSummary:
         checked_in_at=event.att_in,
         checked_out_at=event.att_out,
         note=event.att_opomba,
+    )
+
+
+def _attendance_history_event(event: AttendanceLog) -> AttendanceHistoryEvent:
+    """Convert one ORM event to the history-only event shape."""
+    return AttendanceHistoryEvent(
+        **_attendance_event_summary(event).model_dump(),
+        duration_minutes=_elapsed_minutes(event.att_in, event.att_out),
     )
 
 

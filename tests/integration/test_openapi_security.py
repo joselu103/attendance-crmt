@@ -31,6 +31,25 @@ def test_openapi_describes_bearer_and_correlation_for_protected_routes() -> None
     }
 
 
+def test_openapi_limits_duration_fields_to_history_pages() -> None:
+    schema = create_app().openapi()
+    history_item = schema["components"]["schemas"]["AttendanceHistoryEvent"]
+    history_page = schema["components"]["schemas"]["AttendanceEventPage"]
+
+    assert history_item["properties"]["duration_minutes"] == {
+        "anyOf": [{"type": "integer"}, {"type": "null"}],
+        "title": "Duration Minutes",
+    }
+    assert history_page["properties"]["summary"]["$ref"].endswith(
+        "/AttendanceEventPageSummary"
+    )
+    for model in ("AttendanceEventSummary", "AttendanceEventDetail", "DailyAttendance"):
+        assert (
+            "duration_minutes"
+            not in schema["components"]["schemas"][model]["properties"]
+        )
+
+
 def test_openapi_keeps_health_public() -> None:
     operation = create_app().openapi()["paths"]["/health"]["get"]
 

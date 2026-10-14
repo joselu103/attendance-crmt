@@ -104,15 +104,31 @@ class AttendanceEventSummary(BaseModel):
         return _serialize_local_datetime(value) if value is not None else None
 
 
+class AttendanceHistoryEvent(AttendanceEventSummary):
+    """One history-page event with its full recorded elapsed duration."""
+
+    duration_minutes: int | None
+
+
+class AttendanceEventPageSummary(BaseModel):
+    """Current-page and complete-period elapsed attendance totals in minutes."""
+
+    model_config = ConfigDict(frozen=True)
+
+    page_duration_minutes: int
+    period_duration_minutes: int
+
+
 class AttendanceEventPage(BaseModel):
     """A bounded page of immutable attendance events for one employee."""
 
     model_config = ConfigDict(frozen=True)
 
-    items: tuple[AttendanceEventSummary, ...]
+    items: tuple[AttendanceHistoryEvent, ...]
     limit: int
     offset: int
     next_offset: int | None
+    summary: AttendanceEventPageSummary
 
 
 class AttendanceMonthlySummary(BaseModel):

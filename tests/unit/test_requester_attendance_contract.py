@@ -5,8 +5,9 @@ from pydantic import ValidationError
 
 from attendance_crmt.attendance.contracts import (
     AttendanceEventPage,
-    AttendanceEventSummary,
+    AttendanceEventPageSummary,
     AttendanceExceptionsQuery,
+    AttendanceHistoryEvent,
     EmployeeAttendanceAnalysisQuery,
     MyAttendanceEventQuery,
     MyAttendanceSummaryQuery,
@@ -15,8 +16,8 @@ from attendance_crmt.attendance.contracts import (
 )
 
 
-def _event() -> AttendanceEventSummary:
-    return AttendanceEventSummary(
+def _event() -> AttendanceHistoryEvent:
+    return AttendanceHistoryEvent(
         attendance_event_id=100,
         employee_id=42,
         punch_type="Remote work",
@@ -24,6 +25,7 @@ def _event() -> AttendanceEventSummary:
         checked_in_at=datetime(2026, 8, 10, 8, 0),  # noqa: DTZ001
         checked_out_at=datetime(2026, 8, 10, 16, 0),  # noqa: DTZ001
         note=None,
+        duration_minutes=480,
     )
 
 
@@ -65,6 +67,9 @@ def test_attendance_event_page_is_deeply_immutable() -> None:
         limit=50,
         offset=0,
         next_offset=None,
+        summary=AttendanceEventPageSummary(
+            page_duration_minutes=480, period_duration_minutes=480
+        ),
     )
 
     with pytest.raises(TypeError):

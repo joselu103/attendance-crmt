@@ -116,10 +116,24 @@ plus one-row lookahead. `next_offset` identifies the next page when more rows
 exist; final and empty pages return null. Pages read live data, so concurrent
 changes can move rows between pages; no snapshot is promised.
 
+History items alone include nullable integer `duration_minutes`: the full event
+elapsed duration in UTC, truncated per event to whole minutes. Missing endpoints
+and raw or UTC-reversed timestamps yield null; zero-length intervals yield zero.
+The history root also includes `summary.page_duration_minutes`, the sum of
+non-null returned-item durations after lookahead is removed, and
+`summary.period_duration_minutes`, the unpaged sum of valid completed overlaps
+after each is clipped to the requested half-open local period and independently
+truncated. Active and invalid intervals contribute nothing to the period total;
+overlaps count independently. The existing serializer's Europe/Ljubljana
+default-fold interpretation is retained, so naive source timestamps cannot
+prove physical elapsed time for ambiguous fallback or gap data. Latest, event
+detail, and daily event shapes have no duration or history summary fields.
+
 Requester history remains server-derived and isolated; employee history remains
 administrator-only. Delegated bearer, UUID correlation, and durable safe audit
 outcomes apply on every page. Accepting wider periods is additive under REST
-`1.0.0`; routes, arguments, and response fields are unchanged. Summary, analysis,
-exception, and planned-work caps are unchanged. MCP may forward complete periods
-without splitting them after consuming this locally verified source contract;
-this does not establish deployment or end-to-end readiness.
+`1.0.0`; routes and arguments are unchanged while these approved history-only
+fields are additive. Summary, analysis, exception, and planned-work caps are
+unchanged. MCP may forward complete periods without splitting them after
+consuming this locally verified source contract; this does not establish
+deployment or end-to-end readiness.
