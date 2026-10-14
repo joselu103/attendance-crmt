@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 from uuid import UUID
 
 import httpx
@@ -24,6 +24,7 @@ from attendance_crmt.settings import EntraAuthenticationSettings
 
 logger = logging.getLogger(__name__)
 security_logger = get_logger(__name__)
+TOKEN_CLOCK_SKEW_SECONDS: Final = 60
 
 
 @dataclass(frozen=True)
@@ -168,7 +169,7 @@ class EntraTokenVerifier:
                 algorithms=["RS256"],
                 audience=self._settings.audience,
                 issuer=str(self._settings.issuer),
-                leeway=self._settings.clock_skew_seconds,
+                leeway=TOKEN_CLOCK_SKEW_SECONDS,
                 options={
                     "require": ["iss", "aud", "exp", "nbf", "iat"],
                     "verify_signature": True,
@@ -246,10 +247,7 @@ class EntraTokenVerifier:
                 raise ValueError(
                     "OpenID metadata issuer does not match configured issuer"
                 )
-            if (
-                self._settings.issuer.scheme == "https"
-                and metadata.jwks_uri.scheme != "https"
-            ):
+            if metadata.jwks_uri.scheme != "https":
                 raise ValueError("JWKS URI must use HTTPS")
             self._jwk_client = self._jwk_client_factory(str(metadata.jwks_uri))
             return self._jwk_client

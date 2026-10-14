@@ -53,6 +53,6 @@ env -u PYTHONPATH -u VIRTUAL_ENV .venv/bin/ruff check .
 env -u PYTHONPATH -u VIRTUAL_ENV .venv/bin/ruff format --check .
 ```
 
-Copy `.env.example` to `.env` and configure the approved REST service URL,
-Entra API audience, scope, and client-application allow-list. Never commit
+Copy `.env.example` to `.env` and configure the Entra tenant, API audience,
+scope, and client-application allow-list. Never commit
 credentials, tokens, connection strings, certificates, or attendance data.

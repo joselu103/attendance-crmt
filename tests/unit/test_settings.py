@@ -12,13 +12,18 @@ def test_settings_build_typed_entra_authentication() -> None:
     authentication = settings.entra_authentication
 
     assert authentication.tenant_id == UUID("11111111-1111-1111-1111-111111111111")
-    assert str(authentication.service_base_url) == "http://localhost:8000/"
+    assert authentication.issuer == (
+        "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0"
+    )
+    assert authentication.openid_configuration_url == (
+        "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/"
+        "v2.0/.well-known/openid-configuration"
+    )
     assert authentication.audience == "api://attendance-crmt-test"
     assert authentication.allowed_client_ids == frozenset(
         {UUID("22222222-2222-2222-2222-222222222222")}
     )
     assert authentication.required_scope == "attendance.access"
-    assert authentication.clock_skew_seconds == 60
     assert authentication.admin_role == "attendance.admin"
 
     with pytest.raises(ValidationError, match="frozen"):
@@ -46,39 +51,3 @@ def test_settings_normalize_explicit_entra_email_aliases(monkeypatch) -> None:
             "joseluiscc103@gmail.com"
         )
     }
-
-
-@pytest.mark.parametrize(
-    "name,value",
-    [
-        ("ATTENDANCE_SERVICE_BASE_URL", "http://attendance.example.com"),
-        (
-            "ATTENDANCE_ENTRA_ISSUER",
-            "http://login.microsoftonline.com/tenant/v2.0",
-        ),
-        (
-            "ATTENDANCE_ENTRA_OPENID_CONFIGURATION_URL",
-            "http://login.microsoftonline.com/tenant/openid-configuration",
-        ),
-    ],
-)
-def test_production_settings_require_https_authentication_urls(
-    monkeypatch, name: str, value: str
-) -> None:
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv(name, value)
-
-    with pytest.raises(ValidationError, match="HTTPS"):
-        Settings(_env_file=None)
-
-
-def test_settings_reject_mismatched_openid_and_issuer_authorities(
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv(
-        "ATTENDANCE_ENTRA_OPENID_CONFIGURATION_URL",
-        "https://example.com/.well-known/openid-configuration",
-    )
-
-    with pytest.raises(ValidationError, match="same authority"):
-        Settings(_env_file=None)
