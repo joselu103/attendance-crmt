@@ -18,5 +18,14 @@ planned-work date caps remain unchanged. Audit protected REST operations with a
 server-derived requester and correlation ID, without logging sensitive values
 or attendance records.
 
+History pages retain rows with a check-in before the exclusive local end and
+either an in-range check-in, an active null checkout, or a checkout after the
+local start. This includes active pre-period rows and in-range anomalous rows;
+only history items add nullable UTC-elapsed integer `duration_minutes`. The
+history root summary separately reports non-null returned-item minutes and
+unpaged completed-overlap minutes clipped to the requested period. These are
+current-request values, count overlaps independently, and do not imply a
+snapshot or change any other event representation.
+
 Keep liveness separate from readiness: `GET /health` alone does not establish SQL,
 Entra, or audit readiness.

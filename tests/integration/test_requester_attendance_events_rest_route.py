@@ -316,10 +316,11 @@ def test_history_pages_keep_inclusive_boundaries_ties_and_isolation(
         session.commit()
     app = _app(server_dependencies)
     for offset, expected_ids, next_offset in [
-        (0, [101], 1),
-        (1, [102], 2),
-        (2, [103], None),
-        (3, [], None),
+        (0, [90], 1),
+        (1, [101], 2),
+        (2, [102], 3),
+        (3, [103], None),
+        (4, [], None),
     ]:
         response = _get(
             app,
@@ -339,6 +340,7 @@ def test_history_pages_keep_inclusive_boundaries_ties_and_isolation(
     )
     assert maximum.status_code == 200
     assert [item["attendance_event_id"] for item in maximum.json()["items"]] == [
+        90,
         101,
         102,
         103,
@@ -346,8 +348,201 @@ def test_history_pages_keep_inclusive_boundaries_ties_and_isolation(
     assert maximum.json()["next_offset"] is None
     with audit_session_factory() as session:
         events = session.query(AuditEvent).all()
-    assert len(events) == 5
+    assert len(events) == 6
     assert all(event.correlation_id == CORRELATION_ID for event in events)
     assert all(
         event.outcome == "success" and event.request_json == "{}" for event in events
     )
+
+
+def test_history_returns_overlap_preserving_durations_and_period_totals(
+    server_dependencies, employee_factory
+) -> None:
+    """History keeps display anomalies while its footer totals valid clipped time."""
+    with server_dependencies.attendance_session_factory() as session:
+        session.add(employee_factory.build(izvajalec_id=42, email="person@example.com"))
+        session.add_all(
+            [
+                AttendanceLog(
+                    att_id=100,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 9, 12, 0),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 11, 12, 0),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=101,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 10, 8, 0),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 10, 16, 0),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=102,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 9, 7, 30),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=103,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 10, 12, 0),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 10, 10, 0),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=104,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 10),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 10),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=105,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 11),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 11, 8, 0),  # noqa: DTZ001
+                ),
+            ]
+        )
+        session.commit()
+
+    app = _app(server_dependencies)
+    response = _get(
+        app,
+        f"{ROUTE}?start_date=2026-08-10&end_date=2026-08-10&limit=10",
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    page = response.json()
+    assert [item["attendance_event_id"] for item in page["items"]] == [
+        102,
+        100,
+        104,
+        101,
+        103,
+    ]
+    assert [item["duration_minutes"] for item in page["items"]] == [
+        None,
+        2880,
+        0,
+        480,
+        None,
+    ]
+    assert page["summary"] == {
+        "page_duration_minutes": 3360,
+        "period_duration_minutes": 1920,
+    }
+
+    beyond_last = _get(
+        app,
+        f"{ROUTE}?start_date=2026-08-10&end_date=2026-08-10&limit=1&offset=9",
+        headers=_headers(),
+    )
+    assert beyond_last.status_code == 200
+    assert beyond_last.json()["items"] == []
+    assert beyond_last.json()["next_offset"] is None
+    assert beyond_last.json()["summary"] == {
+        "page_duration_minutes": 0,
+        "period_duration_minutes": 1920,
+    }
+
+
+def test_history_uses_elapsed_utc_minutes_for_dst_and_open_max_end_date(
+    server_dependencies, employee_factory
+) -> None:
+    with server_dependencies.attendance_session_factory() as session:
+        session.add(employee_factory.build(izvajalec_id=42, email="person@example.com"))
+        session.add_all(
+            [
+                AttendanceLog(
+                    att_id=100,
+                    att_user_id=42,
+                    att_in=datetime(2026, 3, 29, 1, 30),  # noqa: DTZ001
+                    att_out=datetime(2026, 3, 29, 3, 30),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=101,
+                    att_user_id=42,
+                    att_in=datetime(2026, 10, 25, 1, 30),  # noqa: DTZ001
+                    att_out=datetime(2026, 10, 25, 3, 30),  # noqa: DTZ001
+                ),
+            ]
+        )
+        session.commit()
+
+    app = _app(server_dependencies)
+    spring = _get(
+        app,
+        f"{ROUTE}?start_date=2026-03-29&end_date=2026-03-29",
+        headers=_headers(),
+    )
+    assert spring.status_code == 200
+    assert spring.json()["items"][0]["duration_minutes"] == 60
+    assert spring.json()["summary"]["period_duration_minutes"] == 60
+
+    max_end = _get(
+        app,
+        f"{ROUTE}?start_date=2026-10-25&end_date=9999-12-31",
+        headers=_headers(),
+    )
+    assert max_end.status_code == 200
+    assert max_end.json()["items"][0]["duration_minutes"] == 180
+    assert max_end.json()["summary"]["period_duration_minutes"] == 180
+
+
+def test_history_truncates_each_elapsed_interval_and_keeps_utc_invalid_rows(
+    server_dependencies, employee_factory
+) -> None:
+    with server_dependencies.attendance_session_factory() as session:
+        session.add(employee_factory.build(izvajalec_id=42, email="person@example.com"))
+        session.add_all(
+            [
+                AttendanceLog(
+                    att_id=100,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 10, 8, 0),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 10, 8, 0, 59, 999999),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=101,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 10, 9, 0),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 10, 9, 1, 59, 999999),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=102,
+                    att_user_id=42,
+                    att_in=datetime(2026, 3, 29, 2, 50),  # noqa: DTZ001
+                    att_out=datetime(2026, 3, 29, 3, 10),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=103,
+                    att_user_id=42,
+                    att_in=datetime(2026, 3, 29, 3, 10),  # noqa: DTZ001
+                    att_out=datetime(2026, 3, 29, 2, 50),  # noqa: DTZ001
+                ),
+            ]
+        )
+        session.commit()
+
+    app = _app(server_dependencies)
+    august = _get(
+        app,
+        f"{ROUTE}?start_date=2026-08-10&end_date=2026-08-10",
+        headers=_headers(),
+    )
+    assert [item["duration_minutes"] for item in august.json()["items"]] == [0, 1]
+    assert august.json()["summary"] == {
+        "page_duration_minutes": 1,
+        "period_duration_minutes": 1,
+    }
+
+    spring_gap = _get(
+        app,
+        f"{ROUTE}?start_date=2026-03-29&end_date=2026-03-29",
+        headers=_headers(),
+    )
+    assert [item["duration_minutes"] for item in spring_gap.json()["items"]] == [
+        None,
+        None,
+    ]
+    assert spring_gap.json()["summary"] == {
+        "page_duration_minutes": 0,
+        "period_duration_minutes": 0,
+    }

@@ -23,11 +23,15 @@ remains `1.0.0`.
 
 Personal and administrator attendance-event listings require explicit start and end
 dates with no maximum span; future end dates are allowed. Both dates are
-inclusive Europe/Ljubljana calendar dates. Pagination remains default 50,
-limit 1–100, nonnegative offset, and `next_offset` for continuation. Pages read
-live data in timestamp/event-ID order, without a snapshot guarantee. Summary,
-report, and planned-work date limits remain unchanged. This additive acceptance
-change preserves REST `1.0.0`, routes, and response fields.
+inclusive Europe/Ljubljana calendar dates. History pages retain completed
+overlaps and active pre-period punches, add nullable full-event UTC
+`duration_minutes` on history rows, and return `summary.page_duration_minutes`
+plus clipped, unpaged `summary.period_duration_minutes`. Pagination remains
+default 50, limit 1–100, nonnegative offset, and `next_offset` for continuation.
+Pages read live data in timestamp/event-ID order, without a snapshot guarantee;
+item and period totals are recalculated for each request. Summary, report, and
+planned-work date limits remain unchanged. This approved additive history-field
+change preserves REST `1.0.0`, routes, arguments, and non-history event shapes.
 
 Interactive API documentation is available at `/docs` and `/redoc`. In Swagger
 UI, use **Authorize** to enter a delegated Attendance bearer token, then supply

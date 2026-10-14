@@ -124,6 +124,7 @@ _EVENT_EXAMPLE = {
     "checked_out_at": "2026-01-15T16:00:00+01:00",
     "note": None,
 }
+_HISTORY_EVENT_EXAMPLE = {**_EVENT_EXAMPLE, "duration_minutes": 480}
 _DATE_RANGE_EXAMPLE = {"start_date": "2026-01-01", "end_date": "2026-01-15"}
 _EMPLOYEE_EXAMPLE = {
     "employee_id": 42,
@@ -135,10 +136,11 @@ _EMPLOYEE_EXAMPLE = {
 }
 _SUCCESS_EXAMPLES: dict[SuccessExample, object] = {
     "event_page": {
-        "items": [_EVENT_EXAMPLE],
+        "items": [_HISTORY_EVENT_EXAMPLE],
         "limit": 50,
         "offset": 0,
         "next_offset": None,
+        "summary": {"page_duration_minutes": 480, "period_duration_minutes": 480},
     },
     "event": _EVENT_EXAMPLE,
     "my_summary": {

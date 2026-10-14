@@ -1,3 +1,35 @@
+# Directive: ATTENDANCE-LOG-DURATION-TOTALS-001
+
+> **Status:** Completed repository-owned REST source slice; MCP may proceed.
+
+Both history pages now emit `items[].duration_minutes` and root
+`summary.page_duration_minutes` / `summary.period_duration_minutes`; this is an
+approved additive history-only wire change under REST `1.0.0`. Item durations
+are integer UTC elapsed minutes under the existing Europe/Ljubljana serializer
+interpretation (missing/reversed intervals are null); page totals sum returned
+non-null full durations, while period totals stream valid completed overlaps,
+clip each independently, and truncate each contribution before summing.
+
+Personal and administrator selection now includes check-ins before the exclusive
+period end that are in-range, active, or completed after the local period start.
+This preserves in-range anomalies and active pre-period punches; out-only rows
+remain excluded. Pagination, ordering, limits, authorization, correlation-linked
+audits, REST version, and non-history event shapes are unchanged. `end_date`
+`9999-12-31` uses an open upper sentinel without overflow; pages remain live and
+their current period total is recalculated on every request.
+
+Evidence: behavior RED 4 failed as expected for missing overlap items and new
+wire/OpenAPI fields, then GREEN 4 passed. Synthetic focused suites passed 57
+tests; full clean-environment pytest passed 173; Ruff check/format, JSON, and
+diff checks passed. The synthetic packet includes 48-hour/one-day clipping
+(2,880 item vs 1,440 period minutes), contained 480-minute rows, active/reversed/
+zero cases, 59-second truncation, spring/fallback elapsed duration, beyond-last
+pages, and both public routes at `date.max`. No real SQL Server execution,
+authoritative DDL/query plan, deployment, Entra, audit-policy, or real-account
+verification occurred; these external blockers remain.
+
+## Historical completed directive
+
 # Directive: ATTENDANCE-HISTORY-PAGINATION-001
 
 > **Status:** Completed repository-owned REST source slice; MCP source ready.

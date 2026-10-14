@@ -295,10 +295,11 @@ def test_history_pages_keep_inclusive_boundaries_ties_and_isolation(
         session.commit()
     app = _app(server_dependencies, roles=["attendance.admin"])
     for offset, expected_ids, next_offset in [
-        (0, [101], 1),
-        (1, [102], 2),
-        (2, [103], None),
-        (3, [], None),
+        (0, [90], 1),
+        (1, [101], 2),
+        (2, [102], 3),
+        (3, [103], None),
+        (4, [], None),
     ]:
         response = _get(
             app,
@@ -318,6 +319,7 @@ def test_history_pages_keep_inclusive_boundaries_ties_and_isolation(
     )
     assert maximum.status_code == 200
     assert [item["attendance_event_id"] for item in maximum.json()["items"]] == [
+        90,
         101,
         102,
         103,
@@ -325,8 +327,60 @@ def test_history_pages_keep_inclusive_boundaries_ties_and_isolation(
     assert maximum.json()["next_offset"] is None
     with audit_session_factory() as session:
         events = session.query(AuditEvent).all()
-    assert len(events) == 5
+    assert len(events) == 6
     assert all(event.correlation_id == CORRELATION_ID for event in events)
     assert all(
         event.outcome == "success" and event.request_json == "{}" for event in events
     )
+
+
+def test_administrator_history_exposes_the_same_overlap_totals(
+    server_dependencies, employee_factory
+) -> None:
+    with server_dependencies.attendance_session_factory() as session:
+        session.add_all(
+            [
+                employee_factory.build(izvajalec_id=1, email="admin@example.com"),
+                employee_factory.build(izvajalec_id=42, email="person@example.com"),
+                AttendanceLog(
+                    att_id=100,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 9, 12, 0),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 11, 12, 0),  # noqa: DTZ001
+                ),
+                AttendanceLog(
+                    att_id=101,
+                    att_user_id=42,
+                    att_in=datetime(2026, 8, 10, 8, 0),  # noqa: DTZ001
+                    att_out=datetime(2026, 8, 10, 16, 0),  # noqa: DTZ001
+                ),
+            ]
+        )
+        session.commit()
+
+    response = _get(
+        _app(server_dependencies, roles=["attendance.admin"]),
+        f"{ROUTE}?start_date=2026-08-10&end_date=2026-08-10",
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert [item["attendance_event_id"] for item in response.json()["items"]] == [
+        100,
+        101,
+    ]
+    assert [item["duration_minutes"] for item in response.json()["items"]] == [
+        2880,
+        480,
+    ]
+    assert response.json()["summary"] == {
+        "page_duration_minutes": 3360,
+        "period_duration_minutes": 1920,
+    }
+
+    max_end = _get(
+        _app(server_dependencies, roles=["attendance.admin"]),
+        f"{ROUTE}?start_date=2026-08-10&end_date=9999-12-31",
+        headers=_headers(),
+    )
+    assert max_end.status_code == 200
+    assert max_end.json()["summary"]["period_duration_minutes"] == 2640
